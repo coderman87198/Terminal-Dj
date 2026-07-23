@@ -1,0 +1,4 @@
+Django>=5.2
+gunicorn
+pydub
+yt_dlp
