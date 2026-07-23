@@ -67,40 +67,80 @@ def search_youtube(query, max_results=20, preferred_runtime=None, remote_compone
         **get_yt_dlp_js_opts(preferred_runtime=preferred_runtime, remote_components=remote_components),
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
+    # Primary attempt using yt_dlp
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
-        except Exception as e:
-            print(f"\n[Search Error] Could not fetch results: {e}")
+            entries = info.get("entries", [])
+            results = []
+
+            for e in entries:
+                if not e:
+                    continue
+                title = e.get("title")
+                url = e.get("webpage_url")
+                if title and url:
+                    thumbnails = e.get("thumbnails") or []
+                    thumbnail = None
+                    if isinstance(thumbnails, list):
+                        for item in thumbnails:
+                            if isinstance(item, dict):
+                                thumb_url = item.get("url")
+                                if thumb_url:
+                                    thumbnail = thumb_url
+                                    break
+                    elif isinstance(thumbnails, dict):
+                        thumbnail = thumbnails.get("url")
+
+                    if not thumbnail:
+                        thumbnail = e.get("thumbnail")
+
+                    results.append({"title": title, "url": url, "thumbnail": thumbnail})
+
+            if results:
+                return results
+    except Exception as e:
+        print(f"\n[Search Error] yt_dlp failed: {e}")
+
+    # Fallback: lightweight HTML scrape + oEmbed lookup (works when yt_dlp cannot run on host)
+    try:
+        import requests
+        from urllib.parse import quote_plus
+
+        search_url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+        resp = requests.get(search_url, timeout=10)
+        if resp.status_code != 200:
             return []
 
-        entries = info.get("entries", [])
+        html = resp.text
+        # Find unique video ids in page HTML
+        import re
+        ids = re.findall(r"/watch\?v=([A-Za-z0-9_-]{11})", html)
+        seen = []
+        for vid in ids:
+            if vid not in seen:
+                seen.append(vid)
+            if len(seen) >= max_results:
+                break
+
         results = []
-
-        for e in entries:
-            if not e:
-                continue
-            title = e.get("title")
-            url = e.get("webpage_url")
-            if title and url:
-                thumbnails = e.get("thumbnails") or []
-                thumbnail = None
-                if isinstance(thumbnails, list):
-                    for item in thumbnails:
-                        if isinstance(item, dict):
-                            thumb_url = item.get("url")
-                            if thumb_url:
-                                thumbnail = thumb_url
-                                break
-                elif isinstance(thumbnails, dict):
-                    thumbnail = thumbnails.get("url")
-
-                if not thumbnail:
-                    thumbnail = e.get("thumbnail")
-
+        for vid in seen:
+            try:
+                oembed = requests.get(f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={vid}&format=json", timeout=6)
+                if oembed.status_code != 200:
+                    continue
+                jd = oembed.json()
+                title = jd.get("title")
+                thumbnail = jd.get("thumbnail_url")
+                url = f"https://www.youtube.com/watch?v={vid}"
                 results.append({"title": title, "url": url, "thumbnail": thumbnail})
+            except Exception:
+                continue
 
         return results
+    except Exception as e:
+        print(f"\n[Search Fallback Error] {e}")
+        return []
 
 
 def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
