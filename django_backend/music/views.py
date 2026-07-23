@@ -12,9 +12,9 @@ WORKSPACE_ROOT = PROJECT_ROOT.parent
 if str(WORKSPACE_ROOT) not in sys.path:
     sys.path.append(str(WORKSPACE_ROOT))
 
-import downloader
-import mixer
-import main as terminal_dj
+from . import downloader
+from . import mixer
+from . import main as terminal_dj
 
 OUTPUT_DIR = os.path.join(WORKSPACE_ROOT, 'finished_product')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
