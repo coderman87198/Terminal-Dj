@@ -122,6 +122,10 @@
         body: JSON.stringify({ query, max_results: parseInt(maxResults, 10) })
       });
       const data = await response.json();
+      if (data.error) {
+        resultsBox.innerHTML = `<div class="status">Error: ${data.error}</div>`;
+        return;
+      }
       if (!data.results || !data.results.length) {
         resultsBox.innerHTML = '<div class="status">No results found.</div>';
         return;
