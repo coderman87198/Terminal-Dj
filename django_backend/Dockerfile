@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+# Install ffmpeg for pydub audio processing
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY django_backend/requirements.txt ./
