@@ -6,6 +6,9 @@ from pathlib import Path
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
+import logging
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = PROJECT_ROOT.parent
@@ -46,8 +49,28 @@ def search_tracks(request):
     if not query:
         return JsonResponse({'results': []})
 
-    results = downloader.search_youtube(query, max_results=max_results)
+    try:
+        results = downloader.search_youtube(query, max_results=max_results)
+    except Exception as e:
+        logger.exception('search_tracks failed')
+        return JsonResponse({'results': [], 'error': str(e)}, status=500)
+
+    if not results:
+        # return helpful message for frontend / logs
+        logger.info('search_tracks returned no results for query: %s', query)
+        return JsonResponse({'results': [], 'error': 'No results returned from search backend.'})
+
     return JsonResponse({'results': results})
+
+
+def search_health(request):
+    """Lightweight health check: perform a single search and return diagnostics."""
+    try:
+        results = downloader.search_youtube('lofi chill', max_results=1)
+        return JsonResponse({'ok': True, 'count': len(results), 'sample': results[0] if results else None})
+    except Exception as e:
+        logger.exception('search_health failed')
+        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
 
 
 @csrf_exempt

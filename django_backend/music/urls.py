@@ -7,11 +7,13 @@ from .views import (
     download_track,
     index,
     search_tracks,
+    search_health,
 )
 
 urlpatterns = [
     path('', index, name='index'),
     path('api/search/', search_tracks, name='search_tracks'),
+    path('api/search-health/', search_health, name='search_health'),
     path('api/download/', download_track, name='download_track'),
     path('api/mix/', build_mix, name='build_mix'),
     path('api/curate/', curate_playlist, name='curate_playlist'),
