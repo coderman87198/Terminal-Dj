@@ -28,10 +28,13 @@ def index(request):
 
 
 def download_mix(request, filename):
-    source = os.path.join(OUTPUT_DIR, filename)
+    source = os.path.abspath(os.path.join(OUTPUT_DIR, filename))
+    output_root = os.path.abspath(OUTPUT_DIR)
+    if not source.startswith(output_root + os.sep) and source != output_root:
+        raise Http404('File not found')
     if not os.path.exists(source):
         raise Http404('File not found')
-    return FileResponse(open(source, 'rb'), as_attachment=True, filename=filename)
+    return FileResponse(open(source, 'rb'), as_attachment=True, filename=os.path.basename(source))
 
 
 @csrf_exempt
@@ -107,7 +110,14 @@ def download_track(request):
     path, error = downloader.download_audio(url, terminal_dj.DOWNLOAD_DIR)
     if path:
         return JsonResponse({'message': 'Download completed.', 'path': path})
-    return JsonResponse({'message': 'Download failed.', 'error': error or 'Unable to download the provided URL.'}, status=500)
+
+    details = error or 'Unable to download the provided URL.'
+    if 'cookies' in details.lower() or 'sign in' in details.lower():
+        details = (
+            "This video requires YouTube cookies or browser auth. "
+            "Set YT_DLP_COOKIEFILE or YT_DLP_COOKIES_FROM_BROWSER in the environment."
+        )
+    return JsonResponse({'message': 'Download failed.', 'error': details}, status=500)
 
 
 @csrf_exempt
@@ -144,7 +154,7 @@ def build_mix(request):
     return JsonResponse({
         'message': 'Mix created.',
         'output': output,
-        'download_url': f'/download-mix/{filename}/'
+        'download_url': request.build_absolute_uri(f'/download-mix/{filename}/')
     })
 
 
@@ -178,5 +188,5 @@ def demo_mix(request):
     return JsonResponse({
         'message': 'Demo mix created.',
         'output': output,
-        'download_url': f'/download-mix/{filename}/'
+        'download_url': request.build_absolute_uri(f'/download-mix/{filename}/')
     })
