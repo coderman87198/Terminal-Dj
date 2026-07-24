@@ -86,25 +86,28 @@ def download_track(request):
     tracks = payload.get('tracks') or []
     if tracks:
         paths = []
+        errors = []
         for item in tracks:
             url = (item.get('url') or '').strip()
             if not url:
                 continue
-            path = downloader.download_audio(url, terminal_dj.DOWNLOAD_DIR)
+            path, error = downloader.download_audio(url, terminal_dj.DOWNLOAD_DIR)
             if path:
                 paths.append(path)
+            else:
+                errors.append({'url': url, 'title': item.get('title'), 'message': error or 'Download failed'})
         if paths:
-            return JsonResponse({'message': 'Downloads completed.', 'paths': paths})
-        return JsonResponse({'message': 'No tracks could be downloaded.'}, status=500)
+            return JsonResponse({'message': 'Downloads completed.', 'paths': paths, 'errors': errors})
+        return JsonResponse({'message': 'No tracks could be downloaded.', 'errors': errors}, status=500)
 
     url = (payload.get('url') or '').strip()
     if not url:
         return JsonResponse({'message': 'Please provide a URL.'}, status=400)
 
-    path = downloader.download_audio(url, terminal_dj.DOWNLOAD_DIR)
+    path, error = downloader.download_audio(url, terminal_dj.DOWNLOAD_DIR)
     if path:
         return JsonResponse({'message': 'Download completed.', 'path': path})
-    return JsonResponse({'message': 'Download failed.'}, status=500)
+    return JsonResponse({'message': 'Download failed.', 'error': error or 'Unable to download the provided URL.'}, status=500)
 
 
 @csrf_exempt
@@ -122,16 +125,19 @@ def build_mix(request):
         return JsonResponse({'message': 'No tracks provided.'}, status=400)
 
     downloaded_files = []
+    errors = []
     for track in tracks:
         url = (track.get('url') or '').strip()
         if not url:
             continue
-        path = downloader.download_audio(url, terminal_dj.DOWNLOAD_DIR)
+        path, error = downloader.download_audio(url, terminal_dj.DOWNLOAD_DIR)
         if path:
             downloaded_files.append(path)
+        else:
+            errors.append({'url': url, 'title': track.get('title'), 'message': error or 'Download failed'})
 
     if not downloaded_files:
-        return JsonResponse({'message': 'No downloadable tracks found.'}, status=500)
+        return JsonResponse({'message': 'No downloadable tracks found.', 'errors': errors}, status=500)
 
     output = mixer.crossfade_tracks(downloaded_files, crossfade_ms=3000, output_path='django_mix.mp3')
     filename = os.path.basename(output)

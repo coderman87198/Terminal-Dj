@@ -164,7 +164,9 @@
         body: JSON.stringify({ tracks: selectedTracks })
       });
       const data = await response.json();
-      statusBox.innerHTML = `<div class="status">${data.message}<br>${data.paths ? data.paths.join('<br>') : ''}</div>`;
+      const pathsHtml = data.paths ? data.paths.join('<br>') : '';
+      const errorsHtml = data.errors ? data.errors.map(err => `Error downloading ${err.title || err.url}: ${err.message}`).join('<br>') : '';
+      statusBox.innerHTML = `<div class="status">${data.message}<br>${pathsHtml}${errorsHtml ? '<br>' + errorsHtml : ''}</div>`;
     }
 
     async function buildMix() {

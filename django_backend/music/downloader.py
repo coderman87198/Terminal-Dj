@@ -2,6 +2,9 @@ import yt_dlp
 import os
 import re
 import shutil
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def safe_title(title):
@@ -143,28 +146,65 @@ def search_youtube(query, max_results=20, preferred_runtime=None, remote_compone
         return []
 
 
+def _find_downloaded_file(outdir, video_id, requested_ext=None):
+    candidates = []
+    if requested_ext:
+        candidates.append(requested_ext)
+    candidates.extend(['mp3', 'm4a', 'webm', 'opus', 'wav', 'aac', 'mp4'])
+    seen = set()
+    for ext in candidates:
+        if not ext or ext in seen:
+            continue
+        seen.add(ext)
+        candidate = os.path.join(outdir, f"{video_id}.{ext}")
+        if os.path.exists(candidate):
+            return candidate
+    # fallback: return any file that begins with the video id
+    prefix = os.path.join(outdir, f"{video_id}.")
+    for file_name in os.listdir(outdir):
+        if file_name.startswith(f"{video_id}."):
+            return os.path.join(outdir, file_name)
+    return None
+
+
 def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     os.makedirs(outdir, exist_ok=True)
 
+    ffmpeg_available = shutil.which('ffmpeg') is not None
     ydl_opts = {
         "format": "bestaudio/best",
-        "outtmpl": os.path.join(outdir, "%(title)s.%(ext)s"),
+        "outtmpl": os.path.join(outdir, "%(id)s.%(ext)s"),
         "quiet": True,
-        "postprocessors": [{
+        **get_yt_dlp_js_opts(preferred_runtime=preferred_runtime, remote_components=remote_components),
+    }
+
+    if ffmpeg_available:
+        ydl_opts["postprocessors"] = [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "mp3",
             "preferredquality": "192",
-        }],
-        **get_yt_dlp_js_opts(preferred_runtime=preferred_runtime, remote_components=remote_components),
-    }
+        }]
+    else:
+        logger.warning("ffmpeg not available; downloading best audio without mp3 conversion.")
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
     except Exception as e:
-        print(f"[Download Error] Skipping broken video: {e}")
-        return None
+        logger.exception("download_audio failed for %s", url)
+        return None, str(e)
 
-    title = safe_title(info.get("title"))
-    filename = os.path.join(outdir, f"{title}.mp3")
-    return filename
+    video_id = info.get('id') or safe_title(info.get('title') or os.path.basename(url))
+    requested_ext = None
+    if ffmpeg_available:
+        requested_ext = 'mp3'
+    else:
+        requested_ext = info.get('ext')
+
+    filename = _find_downloaded_file(outdir, video_id, requested_ext=requested_ext)
+    if filename:
+        return filename, None
+
+    error_message = f"Downloaded file not found after extraction: id={video_id} requested_ext={requested_ext}"
+    logger.warning(error_message)
+    return None, error_message

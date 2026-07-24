@@ -5,8 +5,9 @@ from pydub import AudioSegment
 from .downloader import download_audio, search_youtube
 from .mixer import crossfade_tracks
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 DOWNLOAD_DIR = str(REPO_ROOT / "downloads")
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 CURATED_PLAYLIST_COUNT = 5
 
 
@@ -78,7 +79,7 @@ def curated_flow(prompt, preferred_runtime=None, remote_components=None):
     for idx, vid in enumerate(playlist, start=1):
         ascii_progress_bar(idx - 1, total, prefix="Downloading", suffix=vid['title'][:40])
         print(f"\nDownloading: {vid['title']}")
-        path = download_audio(
+        path, error = download_audio(
             vid["url"],
             DOWNLOAD_DIR,
             preferred_runtime=preferred_runtime,
@@ -86,6 +87,8 @@ def curated_flow(prompt, preferred_runtime=None, remote_components=None):
         )
         if path:
             files.append(path)
+        else:
+            print(f"Download failed for {vid['url']}: {error}")
         ascii_progress_bar(idx, total, prefix="Downloading", suffix=vid['title'][:40])
 
     if not files:
