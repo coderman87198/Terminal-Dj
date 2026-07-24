@@ -122,7 +122,9 @@
         body: JSON.stringify({ query, max_results: parseInt(maxResults, 10) })
       });
       const data = await response.json();
+      console.log('Search API response:', data);
       if (data.error) {
+        console.error('Search API error:', data.error);
         resultsBox.innerHTML = `<div class="status">Error: ${data.error}</div>`;
         return;
       }
