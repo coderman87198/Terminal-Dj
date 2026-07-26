@@ -49,6 +49,13 @@
     </div>
 
     <div class="card">
+      <h2>Music Mixer Upload Panel</h2>
+      <button id="uploadMixerFileButton">Upload File</button>
+      <input id="mixerUploadInput" type="file" style="display:none;" />
+      <div id="mixerUploadList" class="status">No files uploaded yet.</div>
+    </div>
+
+    <div class="card">
       <h2>Curate a playlist</h2>
       <textarea id="curatePrompt" rows="3" placeholder="Describe the kind of playlist you want"></textarea>
       <button id="curateButton">Create curated mix</button>
@@ -70,6 +77,7 @@
 
   <script>
     let selectedTracks = [];
+    let uploadedMixerFiles = [];
 
     document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('searchButton').addEventListener('click', searchTracks);
@@ -77,6 +85,8 @@
       document.getElementById('curateButton').addEventListener('click', curatePlaylist);
       document.getElementById('mixButton').addEventListener('click', buildMix);
       document.getElementById('demoButton').addEventListener('click', runDemo);
+      document.getElementById('uploadMixerFileButton').addEventListener('click', () => document.getElementById('mixerUploadInput').click());
+      document.getElementById('mixerUploadInput').addEventListener('change', handleMixerFileUpload);
 
       document.getElementById('searchResults').addEventListener('click', (event) => {
         const button = event.target.closest('button[data-action="toggle-track"]');
@@ -108,6 +118,23 @@
       if (typeof window.renderSearchResults === 'function') {
         window.renderSearchResults();
       }
+    }
+
+    function renderMixerUploads() {
+      const list = document.getElementById('mixerUploadList');
+      if (!uploadedMixerFiles.length) {
+        list.innerHTML = '<div class="status">No files uploaded yet.</div>';
+        return;
+      }
+      list.innerHTML = `<div class="status"><strong>Uploaded files</strong><ul>${uploadedMixerFiles.map((file) => `<li>${file.name}</li>`).join('')}</ul></div>`;
+    }
+
+    function handleMixerFileUpload(event) {
+      const files = Array.from(event.target.files || []);
+      if (!files.length) return;
+      uploadedMixerFiles = uploadedMixerFiles.concat(files);
+      renderMixerUploads();
+      event.target.value = '';
     }
 
     async function searchTracks() {
@@ -158,15 +185,34 @@
       }
       const statusBox = document.getElementById('downloadStatus');
       statusBox.innerHTML = '<div class="status">Downloading selected tracks...</div>';
-      const response = await fetch('/api/download/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tracks: selectedTracks })
-      });
-      const data = await response.json();
-      const pathsHtml = data.paths ? data.paths.join('<br>') : '';
-      const errorsHtml = data.errors ? data.errors.map(err => `Error downloading ${err.title || err.url}: ${err.message}`).join('<br>') : '';
-      statusBox.innerHTML = `<div class="status">${data.message}<br>${pathsHtml}${errorsHtml ? '<br>' + errorsHtml : ''}</div>`;
+      const errors = [];
+      for (const track of selectedTracks) {
+        try {
+          const response = await fetch('/api/download-direct/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: track.url, title: track.title })
+          });
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            errors.push(`Error downloading ${track.title || track.url}: ${data.error || response.statusText}`);
+            continue;
+          }
+          const blob = await response.blob();
+          const blobUrl = window.URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = blobUrl;
+          anchor.download = `${(track.title || 'track').replace(/[\\/:*?"<>|]/g, '_')}.mp3`;
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+          window.URL.revokeObjectURL(blobUrl);
+        } catch (error) {
+          errors.push(`Error downloading ${track.title || track.url}: ${error.message}`);
+        }
+      }
+      const errorsHtml = errors.length ? errors.join('<br>') : '';
+      statusBox.innerHTML = `<div class="status">Downloads started.<br>${errorsHtml ? errorsHtml : 'All selected tracks were queued for download.'}</div>`;
     }
 
     async function buildMix() {

@@ -63,11 +63,31 @@ def get_yt_dlp_js_opts(preferred_runtime=None, remote_components=None):
     return opts
 
 
+def get_yt_dlp_cookie_opts():
+    cookiefile = os.environ.get("YT_DLP_COOKIEFILE")
+    cookies_from_browser = os.environ.get("YT_DLP_COOKIES_FROM_BROWSER")
+    opts = {}
+    if cookiefile:
+        opts["cookiefile"] = cookiefile
+    if cookies_from_browser:
+        opts["cookiesfrombrowser"] = cookies_from_browser
+    return opts
+
+
+def get_yt_dlp_extractor_args():
+    extractor_args = os.environ.get("YT_DLP_EXTRACTOR_ARGS")
+    if extractor_args:
+        return {"extractor_args": extractor_args}
+    return {"extractor_args": "youtube:player_client=android"}
+
+
 def search_youtube(query, max_results=20, preferred_runtime=None, remote_components=None):
     ydl_opts = {
         "quiet": True,
         "skip_download": True,
         **get_yt_dlp_js_opts(preferred_runtime=preferred_runtime, remote_components=remote_components),
+        **get_yt_dlp_cookie_opts(),
+        **get_yt_dlp_extractor_args(),
     }
 
     # Primary attempt using yt_dlp
@@ -176,6 +196,8 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         "outtmpl": os.path.join(outdir, "%(id)s.%(ext)s"),
         "quiet": True,
         **get_yt_dlp_js_opts(preferred_runtime=preferred_runtime, remote_components=remote_components),
+        **get_yt_dlp_cookie_opts(),
+        **get_yt_dlp_extractor_args(),
     }
 
     if ffmpeg_available:

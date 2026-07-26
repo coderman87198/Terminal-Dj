@@ -1,9 +1,10 @@
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import FileResponse, Http404, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 import logging
@@ -118,6 +119,58 @@ def download_track(request):
             "Set YT_DLP_COOKIEFILE or YT_DLP_COOKIES_FROM_BROWSER in the environment."
         )
     return JsonResponse({'message': 'Download failed.', 'error': details}, status=500)
+
+
+@csrf_exempt
+def download_direct(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+    try:
+        payload = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        payload = {}
+
+    url = (payload.get('url') or '').strip()
+    title = (payload.get('title') or 'track').strip()
+    if not url:
+        return JsonResponse({'message': 'Please provide a URL.'}, status=400)
+
+    safe_title_text = downloader.safe_title(title) or 'track'
+    filename = f'{safe_title_text}.mp3'
+    cmd = [sys.executable, '-m', 'yt_dlp', '--no-playlist', '--extract-audio', '--audio-format', 'mp3', '--audio-quality', '0', '--output', '-', '--quiet', '--no-warnings']
+
+    cookiefile = os.environ.get('YT_DLP_COOKIEFILE')
+    if cookiefile:
+        cmd.extend(['--cookiefile', cookiefile])
+    cookies_from_browser = os.environ.get('YT_DLP_COOKIES_FROM_BROWSER')
+    if cookies_from_browser:
+        cmd.extend(['--cookies-from-browser', cookies_from_browser])
+    extractor_args = os.environ.get('YT_DLP_EXTRACTOR_ARGS') or 'youtube:player_client=android'
+    cmd.extend(['--extractor-args', extractor_args])
+    cmd.append(url)
+
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except Exception as exc:
+        return JsonResponse({'message': 'Download failed.', 'error': str(exc)}, status=500)
+
+    def stream_response():
+        try:
+            while True:
+                chunk = proc.stdout.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            stderr_output = proc.stderr.read().decode('utf-8', errors='ignore').strip()
+            proc.wait(timeout=5)
+            if proc.returncode != 0:
+                raise RuntimeError(stderr_output or 'Download failed.')
+
+    response = StreamingHttpResponse(stream_response(), content_type='audio/mpeg')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
 
 @csrf_exempt
