@@ -5,12 +5,32 @@ from unittest.mock import patch
 from django.http import FileResponse
 from django.test import RequestFactory, SimpleTestCase
 
+from . import downloader
 from .views import download_direct
 
 
 class DownloadDirectViewTests(SimpleTestCase):
     def setUp(self):
         self.factory = RequestFactory()
+
+    @patch("music.downloader.yt_dlp.YoutubeDL")
+    def test_download_audio_handles_non_dict_info(self, mock_youtube_dl):
+        class FakeYDL:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return False
+
+            def extract_info(self, url, download=True):
+                return "unexpected-result"
+
+        mock_youtube_dl.return_value = FakeYDL()
+
+        path, error = downloader.download_audio("https://example.com", "/tmp")
+
+        self.assertIsNone(path)
+        self.assertIn("unexpected result", error.lower())
 
     @patch("music.views.downloader.download_audio")
     def test_download_direct_returns_file_response(self, mock_download_audio):

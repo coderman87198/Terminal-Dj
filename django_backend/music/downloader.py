@@ -81,6 +81,15 @@ def get_yt_dlp_extractor_args():
     return {"extractor_args": "youtube:player_client=android"}
 
 
+def _extract_video_id(url):
+    if not isinstance(url, str):
+        return None
+    match = re.search(r"(?:v=|/)([A-Za-z0-9_-]{11})(?:[/?#]|$)", url)
+    if match:
+        return match.group(1)
+    return None
+
+
 def search_youtube(query, max_results=20, preferred_runtime=None, remote_components=None):
     ydl_opts = {
         "quiet": True,
@@ -94,6 +103,9 @@ def search_youtube(query, max_results=20, preferred_runtime=None, remote_compone
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
+            if not isinstance(info, dict):
+                logger.warning("yt_dlp returned non-dict search info for query %s", query)
+                return []
             entries = info.get("entries", [])
             results = []
 
@@ -215,6 +227,15 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     except Exception as e:
         logger.exception("download_audio failed for %s", url)
         return None, str(e)
+
+    if not isinstance(info, dict):
+        logger.warning("yt_dlp returned unexpected info type for %s: %s", url, type(info).__name__)
+        video_id = _extract_video_id(url)
+        if video_id:
+            filename = _find_downloaded_file(outdir, video_id, requested_ext='mp3')
+            if filename:
+                return filename, None
+        return None, 'yt_dlp returned an unexpected result for the requested URL. Please try again or use a different video.'
 
     video_id = info.get('id') or safe_title(info.get('title') or os.path.basename(url))
     requested_ext = None
