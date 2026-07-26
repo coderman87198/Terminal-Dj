@@ -110,7 +110,8 @@ def search_youtube(query, max_results=20, preferred_runtime=None, remote_compone
             results = []
 
             for e in entries:
-                if not e:
+                if not isinstance(e, dict):
+                    logger.warning("Skipping non-dictionary entry during search results processing.")
                     continue
                 title = e.get("title")
                 url = e.get("webpage_url")
