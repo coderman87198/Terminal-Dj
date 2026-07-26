@@ -1,10 +1,9 @@
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
-from django.http import FileResponse, Http404, JsonResponse, StreamingHttpResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 import logging
@@ -138,38 +137,23 @@ def download_direct(request):
 
     safe_title_text = downloader.safe_title(title) or 'track'
     filename = f'{safe_title_text}.mp3'
-    cmd = [sys.executable, '-m', 'yt_dlp', '--no-playlist', '--extract-audio', '--audio-format', 'mp3', '--audio-quality', '0', '--output', '-', '--quiet', '--no-warnings']
-
-    cookiefile = os.environ.get('YT_DLP_COOKIEFILE')
-    if cookiefile:
-        cmd.extend(['--cookiefile', cookiefile])
-    cookies_from_browser = os.environ.get('YT_DLP_COOKIES_FROM_BROWSER')
-    if cookies_from_browser:
-        cmd.extend(['--cookies-from-browser', cookies_from_browser])
-    extractor_args = os.environ.get('YT_DLP_EXTRACTOR_ARGS') or 'youtube:player_client=android'
-    cmd.extend(['--extractor-args', extractor_args])
-    cmd.append(url)
 
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        path, error = downloader.download_audio(url, terminal_dj.DOWNLOAD_DIR)
     except Exception as exc:
         return JsonResponse({'message': 'Download failed.', 'error': str(exc)}, status=500)
 
-    def stream_response():
-        try:
-            while True:
-                chunk = proc.stdout.read(65536)
-                if not chunk:
-                    break
-                yield chunk
-        finally:
-            stderr_output = proc.stderr.read().decode('utf-8', errors='ignore').strip()
-            proc.wait(timeout=5)
-            if proc.returncode != 0:
-                raise RuntimeError(stderr_output or 'Download failed.')
+    if not path:
+        details = error or 'Unable to download the provided URL.'
+        if 'cookies' in details.lower() or 'sign in' in details.lower():
+            details = (
+                'This video requires YouTube cookies or browser auth. '
+                'Set YT_DLP_COOKIEFILE or YT_DLP_COOKIES_FROM_BROWSER in the environment.'
+            )
+        return JsonResponse({'message': 'Download failed.', 'error': details}, status=500)
 
-    response = StreamingHttpResponse(stream_response(), content_type='audio/mpeg')
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response = FileResponse(open(path, 'rb'), as_attachment=True, filename=filename)
+    response['Content-Type'] = 'audio/mpeg'
     return response
 
 
