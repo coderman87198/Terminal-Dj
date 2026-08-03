@@ -32,6 +32,25 @@ class DownloadDirectViewTests(SimpleTestCase):
         self.assertIsNone(path)
         self.assertIn("unexpected result", error.lower())
 
+    @patch("music.downloader.yt_dlp.YoutubeDL")
+    def test_download_audio_returns_clean_message_for_extractor_error(self, mock_youtube_dl):
+        class FakeYDL:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return False
+
+            def extract_info(self, url, download=True):
+                raise AttributeError("'str' object has no attribute 'get'")
+
+        mock_youtube_dl.return_value = FakeYDL()
+
+        path, error = downloader.download_audio("https://example.com", "/tmp")
+
+        self.assertIsNone(path)
+        self.assertIn("yt-dlp extractor encountered unexpected data", error)
+
     @patch("music.views.downloader.download_audio")
     def test_download_direct_returns_file_response(self, mock_download_audio):
         with NamedTemporaryFile(suffix=".mp3", delete=False) as handle:

@@ -74,11 +74,25 @@ def get_yt_dlp_cookie_opts():
     return opts
 
 
+def _normalize_extractor_args(value):
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return {}
+        if ':' in value and '=' in value:
+            extractor_name, raw_setting = value.split(':', 1)
+            setting_name, setting_value = raw_setting.split('=', 1)
+            return {extractor_name: {setting_name: [setting_value]}}
+    return {"youtube": {"player_client": ["android", "web"]}}
+
+
 def get_yt_dlp_extractor_args():
     extractor_args = os.environ.get("YT_DLP_EXTRACTOR_ARGS")
-    if extractor_args:
-        return {"extractor_args": extractor_args}
-    return {"extractor_args": "youtube:player_client=android"}
+    return {"extractor_args": _normalize_extractor_args(extractor_args)}
 
 
 def _extract_video_id(url):
@@ -94,10 +108,14 @@ def search_youtube(query, max_results=20, preferred_runtime=None, remote_compone
     ydl_opts = {
         "quiet": True,
         "skip_download": True,
+        "no_warnings": True,
+        "noplaylist": True,
         **get_yt_dlp_js_opts(preferred_runtime=preferred_runtime, remote_components=remote_components),
         **get_yt_dlp_cookie_opts(),
         **get_yt_dlp_extractor_args(),
     }
+    if not isinstance(ydl_opts.get("extractor_args"), dict):
+        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["android", "web"]}}
 
     # Primary attempt using yt_dlp
     try:
@@ -208,10 +226,15 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         "format": "bestaudio/best",
         "outtmpl": os.path.join(outdir, "%(id)s.%(ext)s"),
         "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
         **get_yt_dlp_js_opts(preferred_runtime=preferred_runtime, remote_components=remote_components),
         **get_yt_dlp_cookie_opts(),
         **get_yt_dlp_extractor_args(),
     }
+
+    if not isinstance(base_opts.get("extractor_args"), dict):
+        base_opts["extractor_args"] = {"youtube": {"player_client": ["android", "web"]}}
 
     if ffmpeg_available:
         base_opts["postprocessors"] = [{
@@ -222,11 +245,10 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     else:
         logger.warning("ffmpeg not available; downloading best audio without mp3 conversion.")
 
-    candidate_opts = []
-    candidate_opts.append(dict(base_opts))
+    candidate_opts = [dict(base_opts)]
+
     fallback_opts = dict(base_opts)
-    fallback_opts["extractor_args"] = "youtube:player_client=android,web:player_client=android"
-    fallback_opts["no_warnings"] = True
+    fallback_opts["extractor_args"] = {"youtube": {"player_client": ["android"]}}
     candidate_opts.append(fallback_opts)
 
     last_error = None
@@ -234,9 +256,9 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
-        except Exception as e:
+        except Exception as exc:
             logger.exception("download_audio failed for %s (attempt %s)", url, attempt)
-            last_error = str(e) or repr(e)
+            last_error = str(exc) or repr(exc)
             continue
 
         if not isinstance(info, dict):
@@ -263,7 +285,7 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         logger.warning(last_error)
         break
 
-    if last_error and "has no attribute 'get'" in last_error or "'str' object has no attribute 'get'" in last_error:
+    if last_error and ("has no attribute 'get'" in last_error or "'str' object has no attribute 'get'" in last_error):
         friendly = (
             "yt-dlp extractor encountered unexpected data while parsing the video. "
             "This can happen when yt-dlp internals change or when the page response is malformed. "

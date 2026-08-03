@@ -159,7 +159,8 @@ def download_direct(request):
     try:
         path, error = downloader.download_audio(url, terminal_dj.DOWNLOAD_DIR)
     except Exception as exc:
-        return JsonResponse({'message': 'Download failed.', 'error': str(exc)}, status=500)
+        logger.exception('download_direct failed for %s', url)
+        return JsonResponse({'message': 'Download failed.', 'error': _format_download_error(str(exc))}, status=500)
 
     if not path:
         return JsonResponse({'message': 'Download failed.', 'error': _format_download_error(error)}, status=500)
