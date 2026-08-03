@@ -195,7 +195,8 @@
           });
           if (!response.ok) {
             const data = await response.json().catch(() => ({}));
-            errors.push(`Error downloading ${track.title || track.url}: ${data.error || response.statusText}`);
+            const reason = data.error || response.statusText || 'Unknown error';
+            errors.push(`Error downloading ${track.title || track.url}: ${reason}`);
             continue;
           }
           const blob = await response.blob();
@@ -211,7 +212,7 @@
           errors.push(`Error downloading ${track.title || track.url}: ${error.message}`);
         }
       }
-      const errorsHtml = errors.length ? errors.join('<br>') : '';
+      const errorsHtml = errors.length ? errors.map((entry) => `<div style="margin-top:8px;">${entry}</div>`).join('') : '';
       statusBox.innerHTML = `<div class="status">Downloads started.<br>${errorsHtml ? errorsHtml : 'All selected tracks were queued for download.'}</div>`;
     }
 

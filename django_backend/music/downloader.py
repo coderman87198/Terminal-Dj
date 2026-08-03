@@ -226,8 +226,18 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
     except Exception as e:
+        # Capture and translate common internal extractor errors into friendlier messages
         logger.exception("download_audio failed for %s", url)
-        return None, str(e)
+        msg = str(e) or repr(e)
+        if "has no attribute 'get'" in msg or "'str' object has no attribute 'get'" in msg:
+            friendly = (
+                "yt-dlp extractor encountered unexpected data while parsing the video. "
+                "This can happen when yt-dlp internals change or when the page response is malformed. "
+                "Try updating yt-dlp, enabling a JavaScript runtime (set YT_DLP_JS_RUNTIME=node), "
+                "or providing cookies via YT_DLP_COOKIEFILE / YT_DLP_COOKIES_FROM_BROWSER."
+            )
+            return None, f"{friendly} (internal: {msg})"
+        return None, msg
 
     if not isinstance(info, dict):
         logger.warning("yt_dlp returned unexpected info type for %s: %s", url, type(info).__name__)

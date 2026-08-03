@@ -77,6 +77,28 @@ def search_health(request):
 
 
 @csrf_exempt
+def _format_download_error(error):
+    if not error:
+        return 'Unable to download the provided URL.'
+
+    details = str(error).strip()
+    lower = details.lower()
+    if 'cookies' in lower or 'sign in' in lower:
+        return (
+            'This video requires YouTube cookies or browser auth. '
+            'Set YT_DLP_COOKIEFILE or YT_DLP_COOKIES_FROM_BROWSER in the environment. '
+            f'Backend details: {details}'
+        )
+    if 'yt-dlp' in lower or 'yt_dlp' in lower or 'extractor' in lower:
+        return (
+            'The download backend hit a yt-dlp issue. '
+            'Try updating yt-dlp, enabling a JavaScript runtime, or providing cookies. '
+            f'Backend details: {details}'
+        )
+    return details
+
+
+@csrf_exempt
 def download_track(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
@@ -98,7 +120,8 @@ def download_track(request):
             if path:
                 paths.append(path)
             else:
-                errors.append({'url': url, 'title': item.get('title'), 'message': error or 'Download failed'})
+                formatted = _format_download_error(error)
+                errors.append({'url': url, 'title': item.get('title'), 'message': formatted})
         if paths:
             return JsonResponse({'message': 'Downloads completed.', 'paths': paths, 'errors': errors})
         return JsonResponse({'message': 'No tracks could be downloaded.', 'errors': errors}, status=500)
@@ -111,13 +134,7 @@ def download_track(request):
     if path:
         return JsonResponse({'message': 'Download completed.', 'path': path})
 
-    details = error or 'Unable to download the provided URL.'
-    if 'cookies' in details.lower() or 'sign in' in details.lower():
-        details = (
-            "This video requires YouTube cookies or browser auth. "
-            "Set YT_DLP_COOKIEFILE or YT_DLP_COOKIES_FROM_BROWSER in the environment."
-        )
-    return JsonResponse({'message': 'Download failed.', 'error': details}, status=500)
+    return JsonResponse({'message': 'Download failed.', 'error': _format_download_error(error)}, status=500)
 
 
 @csrf_exempt
