@@ -64,8 +64,8 @@ def get_yt_dlp_js_opts(preferred_runtime=None, remote_components=None):
 
 
 def get_yt_dlp_cookie_opts():
-    cookiefile = os.environ.get("YT_DLP_COOKIEFILE")
-    cookies_from_browser = os.environ.get("YT_DLP_COOKIES_FROM_BROWSER")
+    cookiefile = os.getenv("YT_DLP_COOKIEFILE")
+    cookies_from_browser = os.getenv("YT_DLP_COOKIES_FROM_BROWSER")
     opts = {}
     if cookiefile:
         opts["cookiefile"] = cookiefile
@@ -221,6 +221,24 @@ def _find_downloaded_file(outdir, video_id, requested_ext=None):
 def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     os.makedirs(outdir, exist_ok=True)
 
+    cookie_path = os.getenv("YT_DLP_COOKIEFILE")
+    if cookie_path:
+        cookie_path = os.path.expanduser(cookie_path)
+    else:
+        cookie_path = None
+
+    cookie_opts = get_yt_dlp_cookie_opts()
+    if cookie_path is None and not cookie_opts.get("cookiesfrombrowser"):
+        return None, (
+            "No YouTube cookie source is configured. Set YT_DLP_COOKIEFILE to a Netscape-format cookies file or set YT_DLP_COOKIES_FROM_BROWSER before downloading."
+        )
+
+    if cookie_path and not os.path.exists(cookie_path):
+        return None, (
+            f"The configured YouTube cookie file was not found at {cookie_path}. "
+            "Set YT_DLP_COOKIEFILE to the correct path for your cookies file."
+        )
+
     ffmpeg_available = shutil.which('ffmpeg') is not None
     base_opts = {
         "format": "bestaudio/best",
@@ -229,9 +247,11 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         "no_warnings": True,
         "noplaylist": True,
         **get_yt_dlp_js_opts(preferred_runtime=preferred_runtime, remote_components=remote_components),
-        **get_yt_dlp_cookie_opts(),
+        **cookie_opts,
         **get_yt_dlp_extractor_args(),
     }
+    if cookie_path:
+        base_opts["cookiefile"] = cookie_path
 
     if not isinstance(base_opts.get("extractor_args"), dict):
         base_opts["extractor_args"] = {"youtube": {"player_client": ["android", "web"]}}

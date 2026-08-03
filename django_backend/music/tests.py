@@ -27,7 +27,15 @@ class DownloadDirectViewTests(SimpleTestCase):
 
         mock_youtube_dl.return_value = FakeYDL()
 
-        path, error = downloader.download_audio("https://example.com", "/tmp")
+        with NamedTemporaryFile(suffix=".txt", delete=False) as handle:
+            handle.write(b"cookie-data")
+            cookie_path = handle.name
+
+        try:
+            with patch.dict("os.environ", {"YT_DLP_COOKIEFILE": cookie_path}, clear=False):
+                path, error = downloader.download_audio("https://example.com", "/tmp")
+        finally:
+            Path(cookie_path).unlink(missing_ok=True)
 
         self.assertIsNone(path)
         self.assertIn("unexpected result", error.lower())
@@ -46,7 +54,15 @@ class DownloadDirectViewTests(SimpleTestCase):
 
         mock_youtube_dl.return_value = FakeYDL()
 
-        path, error = downloader.download_audio("https://example.com", "/tmp")
+        with NamedTemporaryFile(suffix=".txt", delete=False) as handle:
+            handle.write(b"cookie-data")
+            cookie_path = handle.name
+
+        try:
+            with patch.dict("os.environ", {"YT_DLP_COOKIEFILE": cookie_path}, clear=False):
+                path, error = downloader.download_audio("https://example.com", "/tmp")
+        finally:
+            Path(cookie_path).unlink(missing_ok=True)
 
         self.assertIsNone(path)
         self.assertIn("yt-dlp extractor encountered unexpected data", error)
