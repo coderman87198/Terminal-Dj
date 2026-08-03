@@ -204,7 +204,7 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     os.makedirs(outdir, exist_ok=True)
 
     ffmpeg_available = shutil.which('ffmpeg') is not None
-    ydl_opts = {
+    base_opts = {
         "format": "bestaudio/best",
         "outtmpl": os.path.join(outdir, "%(id)s.%(ext)s"),
         "quiet": True,
@@ -214,7 +214,7 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     }
 
     if ffmpeg_available:
-        ydl_opts["postprocessors"] = [{
+        base_opts["postprocessors"] = [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "mp3",
             "preferredquality": "192",
@@ -222,43 +222,54 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     else:
         logger.warning("ffmpeg not available; downloading best audio without mp3 conversion.")
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-    except Exception as e:
-        # Capture and translate common internal extractor errors into friendlier messages
-        logger.exception("download_audio failed for %s", url)
-        msg = str(e) or repr(e)
-        if "has no attribute 'get'" in msg or "'str' object has no attribute 'get'" in msg:
-            friendly = (
-                "yt-dlp extractor encountered unexpected data while parsing the video. "
-                "This can happen when yt-dlp internals change or when the page response is malformed. "
-                "Try updating yt-dlp, enabling a JavaScript runtime (set YT_DLP_JS_RUNTIME=node), "
-                "or providing cookies via YT_DLP_COOKIEFILE / YT_DLP_COOKIES_FROM_BROWSER."
-            )
-            return None, f"{friendly} (internal: {msg})"
-        return None, msg
+    candidate_opts = []
+    candidate_opts.append(dict(base_opts))
+    fallback_opts = dict(base_opts)
+    fallback_opts["extractor_args"] = "youtube:player_client=android,web:player_client=android"
+    fallback_opts["no_warnings"] = True
+    candidate_opts.append(fallback_opts)
 
-    if not isinstance(info, dict):
-        logger.warning("yt_dlp returned unexpected info type for %s: %s", url, type(info).__name__)
-        video_id = _extract_video_id(url)
-        if video_id:
-            filename = _find_downloaded_file(outdir, video_id, requested_ext='mp3')
-            if filename:
-                return filename, None
-        return None, 'yt_dlp returned an unexpected result for the requested URL. Please try again or use a different video.'
+    last_error = None
+    for attempt, ydl_opts in enumerate(candidate_opts, start=1):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+        except Exception as e:
+            logger.exception("download_audio failed for %s (attempt %s)", url, attempt)
+            last_error = str(e) or repr(e)
+            continue
 
-    video_id = info.get('id') or safe_title(info.get('title') or os.path.basename(url))
-    requested_ext = None
-    if ffmpeg_available:
-        requested_ext = 'mp3'
-    else:
-        requested_ext = info.get('ext')
+        if not isinstance(info, dict):
+            logger.warning("yt_dlp returned unexpected info type for %s: %s", url, type(info).__name__)
+            video_id = _extract_video_id(url)
+            if video_id:
+                filename = _find_downloaded_file(outdir, video_id, requested_ext='mp3')
+                if filename:
+                    return filename, None
+            return None, 'yt_dlp returned an unexpected result for the requested URL. Please try again or use a different video.'
 
-    filename = _find_downloaded_file(outdir, video_id, requested_ext=requested_ext)
-    if filename:
-        return filename, None
+        video_id = info.get('id') or safe_title(info.get('title') or os.path.basename(url))
+        requested_ext = None
+        if ffmpeg_available:
+            requested_ext = 'mp3'
+        else:
+            requested_ext = info.get('ext')
 
-    error_message = f"Downloaded file not found after extraction: id={video_id} requested_ext={requested_ext}"
-    logger.warning(error_message)
-    return None, error_message
+        filename = _find_downloaded_file(outdir, video_id, requested_ext=requested_ext)
+        if filename:
+            return filename, None
+
+        last_error = f"Downloaded file not found after extraction: id={video_id} requested_ext={requested_ext}"
+        logger.warning(last_error)
+        break
+
+    if last_error and "has no attribute 'get'" in last_error or "'str' object has no attribute 'get'" in last_error:
+        friendly = (
+            "yt-dlp extractor encountered unexpected data while parsing the video. "
+            "This can happen when yt-dlp internals change or when the page response is malformed. "
+            "Try updating yt-dlp, enabling a JavaScript runtime (set YT_DLP_JS_RUNTIME=node), "
+            "or providing cookies via YT_DLP_COOKIEFILE / YT_DLP_COOKIES_FROM_BROWSER."
+        )
+        return None, f"{friendly} (internal: {last_error})"
+
+    return None, last_error or 'Download failed.'
