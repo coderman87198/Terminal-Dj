@@ -83,10 +83,11 @@ def _format_download_error(error):
 
     details = str(error).strip()
     lower = details.lower()
-    if 'cookies' in lower or 'sign in' in lower:
+    if 'cookies' in lower or 'sign in' in lower or 'browser auth' in lower:
         return (
             'This video requires YouTube cookies or browser auth. '
-            'Set YT_DLP_COOKIEFILE or YT_DLP_COOKIES_FROM_BROWSER in the environment. '
+            'Set YT_DLP_COOKIEFILE to a Netscape-format cookies file or set YT_DLP_COOKIES_FROM_BROWSER to a browser name such as chrome/firefox. '
+            'If you are deploying on Render, add these values in the Render dashboard Environment section. '
             f'Backend details: {details}'
         )
     if 'yt-dlp' in lower or 'yt_dlp' in lower or 'extractor' in lower:
@@ -161,13 +162,7 @@ def download_direct(request):
         return JsonResponse({'message': 'Download failed.', 'error': str(exc)}, status=500)
 
     if not path:
-        details = error or 'Unable to download the provided URL.'
-        if 'cookies' in details.lower() or 'sign in' in details.lower():
-            details = (
-                'This video requires YouTube cookies or browser auth. '
-                'Set YT_DLP_COOKIEFILE or YT_DLP_COOKIES_FROM_BROWSER in the environment.'
-            )
-        return JsonResponse({'message': 'Download failed.', 'error': details}, status=500)
+        return JsonResponse({'message': 'Download failed.', 'error': _format_download_error(error)}, status=500)
 
     response = FileResponse(open(path, 'rb'), as_attachment=True, filename=filename)
     response['Content-Type'] = 'audio/mpeg'
