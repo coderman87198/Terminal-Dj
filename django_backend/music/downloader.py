@@ -79,22 +79,35 @@ def get_yt_dlp_cookie_opts():
     if cookies_from_browser:
         opts["cookiesfrombrowser"] = cookies_from_browser
 
-    # If neither env var is set, auto-detect a cookie file in the repo workspace.
+    # If neither env var is set, auto-detect a cookie file in likely locations.
     if not cookiefile and not cookies_from_browser:
         try:
             from pathlib import Path
-            workspace_root = Path(__file__).resolve().parents[2]
-            # Common filenames users export from browsers or tools
-            candidates = [
-                workspace_root / 'www.youtube.com_cookies.txt',
-                workspace_root / 'youtube_cookies.txt',
-                workspace_root / 'cookies.txt',
-                workspace_root / '.youtube_cookies.txt',
+            this_file = Path(__file__).resolve()
+            # potential search roots: repo workspace (two parents up), package dir (one parent), and cwd
+            search_roots = [
+                this_file.parents[2],  # repo root when developing
+                this_file.parents[1],  # django_backend folder
+                Path.cwd(),            # container working directory
             ]
-            for p in candidates:
-                if p.exists():
-                    opts["cookiefile"] = str(p)
-                    print(f"[Info] Auto-detected YouTube cookie file at: {p}")
+            seen_roots = []
+            candidates = [
+                'www.youtube.com_cookies.txt',
+                'youtube_cookies.txt',
+                'cookies.txt',
+                '.youtube_cookies.txt',
+            ]
+            for root in search_roots:
+                if root in seen_roots:
+                    continue
+                seen_roots.append(root)
+                for name in candidates:
+                    p = root / name
+                    if p.exists():
+                        opts["cookiefile"] = str(p)
+                        print(f"[Info] Auto-detected YouTube cookie file at: {p}")
+                        break
+                if opts.get("cookiefile"):
                     break
         except Exception:
             # Non-fatal; detection is best-effort
