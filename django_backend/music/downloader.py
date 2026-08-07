@@ -64,6 +64,13 @@ def get_yt_dlp_js_opts(preferred_runtime=None, remote_components=None):
 
 
 def get_yt_dlp_cookie_opts():
+    """Return yt-dlp cookie options.
+
+    Priority order:
+    1. YT_DLP_COOKIEFILE environment variable (path to Netscape-format cookies file)
+    2. YT_DLP_COOKIES_FROM_BROWSER environment variable (browser name)
+    3. Auto-detect a common cookie filename in the repository workspace (e.g. www.youtube.com_cookies.txt)
+    """
     cookiefile = os.getenv("YT_DLP_COOKIEFILE")
     cookies_from_browser = os.getenv("YT_DLP_COOKIES_FROM_BROWSER")
     opts = {}
@@ -71,6 +78,28 @@ def get_yt_dlp_cookie_opts():
         opts["cookiefile"] = cookiefile
     if cookies_from_browser:
         opts["cookiesfrombrowser"] = cookies_from_browser
+
+    # If neither env var is set, auto-detect a cookie file in the repo workspace.
+    if not cookiefile and not cookies_from_browser:
+        try:
+            from pathlib import Path
+            workspace_root = Path(__file__).resolve().parents[2]
+            # Common filenames users export from browsers or tools
+            candidates = [
+                workspace_root / 'www.youtube.com_cookies.txt',
+                workspace_root / 'youtube_cookies.txt',
+                workspace_root / 'cookies.txt',
+                workspace_root / '.youtube_cookies.txt',
+            ]
+            for p in candidates:
+                if p.exists():
+                    opts["cookiefile"] = str(p)
+                    print(f"[Info] Auto-detected YouTube cookie file at: {p}")
+                    break
+        except Exception:
+            # Non-fatal; detection is best-effort
+            pass
+
     return opts
 
 
@@ -228,7 +257,12 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         cookie_path = None
 
     cookie_opts = get_yt_dlp_cookie_opts()
-    if cookie_path is None and not cookie_opts.get("cookiesfrombrowser"):
+
+    # If get_yt_dlp_cookie_opts discovered a cookiefile, prefer that when no explicit env var was set
+    if cookie_path is None and cookie_opts.get("cookiefile"):
+        cookie_path = cookie_opts.get("cookiefile")
+
+    if not (cookie_path or cookie_opts.get("cookiesfrombrowser")):
         return None, (
             "No YouTube cookie source is configured. Set YT_DLP_COOKIEFILE to a Netscape-format cookies file or set YT_DLP_COOKIES_FROM_BROWSER before downloading."
         )
