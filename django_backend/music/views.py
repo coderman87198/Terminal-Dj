@@ -114,15 +114,26 @@ def download_track(request):
         paths = []
         errors = []
         for item in tracks:
-            url = (item.get('url') or '').strip()
+            # Accept either dicts with 'url' or plain string URLs
+            if isinstance(item, str):
+                url = item.strip()
+                title = None
+            elif isinstance(item, dict):
+                url = (item.get('url') or '').strip()
+                title = item.get('title')
+            else:
+                # unknown item type; skip
+                continue
+
             if not url:
                 continue
+
             path, error = downloader.download_audio(url, terminal_dj.DOWNLOAD_DIR)
             if path:
                 paths.append(path)
             else:
                 formatted = _format_download_error(error)
-                errors.append({'url': url, 'title': item.get('title'), 'message': formatted})
+                errors.append({'url': url, 'title': title, 'message': formatted})
         if paths:
             return JsonResponse({'message': 'Downloads completed.', 'paths': paths, 'errors': errors})
         return JsonResponse({'message': 'No tracks could be downloaded.', 'errors': errors}, status=500)
@@ -187,14 +198,24 @@ def build_mix(request):
     downloaded_files = []
     errors = []
     for track in tracks:
-        url = (track.get('url') or '').strip()
+        # support both string URLs and dict items
+        if isinstance(track, str):
+            url = track.strip()
+            title = None
+        elif isinstance(track, dict):
+            url = (track.get('url') or '').strip()
+            title = track.get('title')
+        else:
+            continue
+
         if not url:
             continue
+
         path, error = downloader.download_audio(url, terminal_dj.DOWNLOAD_DIR)
         if path:
             downloaded_files.append(path)
         else:
-            errors.append({'url': url, 'title': track.get('title'), 'message': error or 'Download failed'})
+            errors.append({'url': url, 'title': title, 'message': error or 'Download failed'})
 
     if not downloaded_files:
         return JsonResponse({'message': 'No downloadable tracks found.', 'errors': errors}, status=500)
