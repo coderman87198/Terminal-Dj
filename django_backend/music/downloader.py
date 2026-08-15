@@ -323,6 +323,7 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         # Ensure explicit cookiefile from environment is honored per deployment config
         cookiefile = os.getenv("YT_DLP_COOKIEFILE")
         if cookiefile:
+            print("Using cookie file:", cookiefile)
             ydl_opts["cookiefile"] = cookiefile
         else:
             print("COOKIEFILE NOT FOUND:", cookiefile)
