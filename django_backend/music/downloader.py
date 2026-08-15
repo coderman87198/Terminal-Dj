@@ -320,7 +320,6 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
 
     last_error = None
     for attempt, ydl_opts in enumerate(candidate_opts, start=1):
-        import os
         cookiefile = os.getenv("YT_DLP_COOKIEFILE")
         if cookiefile:
             print("Using cookie file:", cookiefile)
