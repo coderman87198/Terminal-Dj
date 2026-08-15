@@ -321,11 +321,11 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     last_error = None
     for attempt, ydl_opts in enumerate(candidate_opts, start=1):
         # Ensure explicit cookiefile from environment is honored per deployment config
-        cookiefile_env = os.getenv("YT_DLP_COOKIEFILE")
-        if cookiefile_env:
-            ydl_opts["cookiefile"] = cookiefile_env
+        cookiefile = os.getenv("YT_DLP_COOKIEFILE")
+        if cookiefile:
+            ydl_opts["cookiefile"] = cookiefile
         else:
-            print("COOKIEFILE NOT FOUND")
+            print("COOKIEFILE NOT FOUND:", cookiefile)
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
