@@ -323,8 +323,11 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         cookiefile = os.getenv("YT_DLP_COOKIEFILE")
         if cookiefile:
             print("Using cookie file:", cookiefile)
-            # Force override of any cookie options from cookie_opts
             ydl_opts["cookiefile"] = cookiefile
+            # Remove conflicting cookie options
+            ydl_opts.pop("cookiesfrombrowser", None)
+            ydl_opts.pop("cookiefile", None)  # remove old value
+            ydl_opts["cookiefile"] = cookiefile  # set correct value again
         else:
             print("COOKIEFILE NOT FOUND:", cookiefile)
 
