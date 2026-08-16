@@ -331,6 +331,8 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         else:
             print("COOKIEFILE NOT FOUND:", cookiefile)
 
+        print("FINAL YDL_OPTS:", ydl_opts)
+
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
