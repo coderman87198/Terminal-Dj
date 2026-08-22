@@ -20,6 +20,8 @@
     ul { padding-left: 18px; }
     .small { font-size: 0.9rem; color: #94a3b8; }
     a.download-link { display: inline-block; padding: 10px 14px; margin-top: 10px; background: #38bdf8; color: #082f49; border-radius: 8px; text-decoration: none; font-weight: bold; }
+    .player-shell { margin-top: 16px; }
+    #youtubePlayer { width: 100%; aspect-ratio: 16 / 9; max-width: 640px; }
   </style>
 </head>
 <body>
@@ -46,6 +48,10 @@
       <div id="selectedTracksPanel"></div>
       <button id="downloadSelectedButton">Download selected tracks</button>
       <div id="downloadStatus"></div>
+      <div class="player-shell">
+        <div id="youtubePlayer"></div>
+        <div id="playerStatus" class="small">Choose Play on a search result.</div>
+      </div>
     </div>
 
     <div class="card">
@@ -78,6 +84,54 @@
   <script>
     let selectedTracks = [];
     let uploadedMixerFiles = [];
+    let youtubePlayer;
+    let pendingVideoId;
+
+    function onYouTubeIframeAPIReady() {
+      youtubePlayer = new YT.Player('youtubePlayer', {
+        height: '360',
+        width: '640',
+        videoId: pendingVideoId || '',
+        playerVars: { rel: 0, playsinline: 1 },
+        events: { onStateChange: updatePlayerStatus }
+      });
+    }
+
+    function updatePlayerStatus(event) {
+      const status = document.getElementById('playerStatus');
+      if (event.data === YT.PlayerState.PLAYING) status.textContent = 'Playing';
+      if (event.data === YT.PlayerState.PAUSED) status.textContent = 'Paused';
+      if (event.data === YT.PlayerState.ENDED) status.textContent = 'Finished';
+    }
+
+    function getYouTubeVideoId(url) {
+      try {
+        const parsed = new URL(url);
+        if (parsed.hostname === 'youtu.be') return parsed.pathname.slice(1);
+        if (parsed.hostname.endsWith('youtube.com')) {
+          if (parsed.pathname === '/watch') return parsed.searchParams.get('v');
+          const parts = parsed.pathname.split('/');
+          if (parts[1] === 'shorts' || parts[1] === 'embed') return parts[2];
+        }
+      } catch (error) {
+        return null;
+      }
+      return null;
+    }
+
+    function playTrack(item) {
+      const videoId = getYouTubeVideoId(item.url);
+      if (!videoId) {
+        document.getElementById('playerStatus').textContent = 'This result has no playable YouTube video.';
+        return;
+      }
+      pendingVideoId = videoId;
+      if (youtubePlayer && typeof youtubePlayer.loadVideoById === 'function') {
+        youtubePlayer.loadVideoById(videoId);
+      } else {
+        document.getElementById('playerStatus').textContent = 'YouTube player is loading...';
+      }
+    }
 
     document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('searchButton').addEventListener('click', searchTracks);
@@ -94,6 +148,16 @@
         const item = JSON.parse(button.dataset.item);
         toggleTrackSelection(item);
       });
+
+      document.getElementById('searchResults').addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-action="play-track"]');
+        if (!button) return;
+        playTrack(JSON.parse(button.dataset.item));
+      });
+
+      const script = document.createElement('script');
+      script.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(script);
     });
 
     function renderSelectedTracks() {
@@ -168,6 +232,7 @@
               <span class="small">${item.url}</span><br>
               ${item.thumbnail ? `<img class="thumb" src="${item.thumbnail}" alt="${item.title}">` : ''}
               <div style="margin-top:8px;">
+                <button type="button" data-action="play-track" data-item='${JSON.stringify(item).replace(/'/g, "&apos;")}'>Play</button>
                 <button type="button" data-action="toggle-track" data-item='${JSON.stringify(item).replace(/'/g, "&apos;")}'>${isSelected ? 'Remove' : 'Select'}</button>
               </div>
             </div>
