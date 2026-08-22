@@ -75,9 +75,10 @@ def get_yt_dlp_cookie_opts():
     cookies_from_browser = os.getenv("YT_DLP_COOKIES_FROM_BROWSER")
     opts = {}
     if cookiefile:
-        opts["cookiefile"] = cookiefile
+        opts["cookiefile"] = os.path.expanduser(cookiefile)
     if cookies_from_browser:
-        opts["cookiesfrombrowser"] = cookies_from_browser
+        browser_parts = cookies_from_browser.split(":", 3)
+        opts["cookiesfrombrowser"] = tuple(browser_parts)
 
     # If neither env var is set, auto-detect a cookie file in likely locations.
     if not cookiefile and not cookies_from_browser:
@@ -103,7 +104,7 @@ def get_yt_dlp_cookie_opts():
                 seen_roots.append(root)
                 for name in candidates:
                     p = root / name
-                    if p.exists():
+                    if p.is_file() and p.stat().st_size > 0:
                         opts["cookiefile"] = str(p)
                         print(f"[Info] Auto-detected YouTube cookie file at: {p}")
                         break
@@ -275,11 +276,6 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     if cookie_path is None and cookie_opts.get("cookiefile"):
         cookie_path = cookie_opts.get("cookiefile")
 
-    if not (cookie_path or cookie_opts.get("cookiesfrombrowser")):
-        return None, (
-            "No YouTube cookie source is configured. Set YT_DLP_COOKIEFILE to a Netscape-format cookies file or set YT_DLP_COOKIES_FROM_BROWSER before downloading."
-        )
-
     if cookie_path and not os.path.exists(cookie_path):
         return None, (
             f"The configured YouTube cookie file was not found at {cookie_path}. "
@@ -320,18 +316,9 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
 
     last_error = None
     for attempt, ydl_opts in enumerate(candidate_opts, start=1):
-        cookiefile = os.getenv("YT_DLP_COOKIEFILE")
-        if cookiefile:
-            print("Using cookie file:", cookiefile)
-            ydl_opts["cookiefile"] = cookiefile
-            # Remove conflicting cookie options
-            ydl_opts.pop("cookiesfrombrowser", None)
-            ydl_opts.pop("cookiefile", None)  # remove old value
-            ydl_opts["cookiefile"] = cookiefile  # set correct value again
-        else:
-            print("COOKIEFILE NOT FOUND:", cookiefile)
-
-        print("FINAL YDL_OPTS:", ydl_opts)
+        ydl_opts["http_headers"] = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+        }
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
