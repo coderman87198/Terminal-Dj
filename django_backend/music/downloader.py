@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import logging
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -72,16 +73,23 @@ def get_yt_dlp_cookie_opts():
     3. Auto-detect a common cookie filename in the repository workspace (e.g. www.youtube.com_cookies.txt)
     """
     cookiefile = os.getenv("YT_DLP_COOKIEFILE")
+    cookie_contents = os.getenv("YT_DLP_COOKIE_CONTENTS")
     cookies_from_browser = os.getenv("YT_DLP_COOKIES_FROM_BROWSER")
     opts = {}
     if cookiefile:
         opts["cookiefile"] = os.path.expanduser(cookiefile)
+    elif cookie_contents and cookie_contents.strip():
+        cookie_path = os.path.join(tempfile.gettempdir(), "terminal_dj_youtube_cookies.txt")
+        with open(cookie_path, "w", encoding="utf-8") as handle:
+            handle.write(cookie_contents)
+        os.chmod(cookie_path, 0o600)
+        opts["cookiefile"] = cookie_path
     if cookies_from_browser:
         browser_parts = cookies_from_browser.split(":", 3)
         opts["cookiesfrombrowser"] = tuple(browser_parts)
 
     # If neither env var is set, auto-detect a cookie file in likely locations.
-    if not cookiefile and not cookies_from_browser:
+    if not cookiefile and not cookie_contents and not cookies_from_browser:
         try:
             from pathlib import Path
             this_file = Path(__file__).resolve()

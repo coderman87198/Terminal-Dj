@@ -1,0 +1,4 @@
+run = "cd django_backend && python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:$PORT"
+
+[deployment]
+run = ["sh", "-c", "cd django_backend && python manage.py migrate --noinput && gunicorn dj_backend.wsgi:application --bind 0.0.0.0:$PORT"]

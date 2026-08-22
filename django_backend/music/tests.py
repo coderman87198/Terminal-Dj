@@ -16,6 +16,13 @@ class DownloaderConfigurationTests(SimpleTestCase):
 
         self.assertEqual(options["cookiesfrombrowser"], ("chrome", "Default"))
 
+    def test_cookie_contents_are_written_to_private_file(self):
+        with patch.dict("os.environ", {"YT_DLP_COOKIE_CONTENTS": "# Netscape HTTP Cookie File\n"}, clear=True):
+            options = downloader.get_yt_dlp_cookie_opts()
+
+        self.assertTrue(Path(options["cookiefile"]).is_file())
+        self.assertEqual(Path(options["cookiefile"]).stat().st_mode & 0o777, 0o600)
+
     def test_empty_auto_detected_cookie_file_is_ignored(self):
         with TemporaryDirectory() as directory:
             Path(directory, "cookies.txt").touch()
