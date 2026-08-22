@@ -1,5 +1,5 @@
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from unittest.mock import patch
 
 from django.http import FileResponse
@@ -7,6 +7,22 @@ from django.test import RequestFactory, SimpleTestCase
 
 from . import downloader
 from .views import download_direct
+
+
+class DownloaderConfigurationTests(SimpleTestCase):
+    def test_browser_cookie_configuration_uses_yt_dlp_tuple(self):
+        with patch.dict("os.environ", {"YT_DLP_COOKIES_FROM_BROWSER": "chrome:Default"}, clear=False):
+            options = downloader.get_yt_dlp_cookie_opts()
+
+        self.assertEqual(options["cookiesfrombrowser"], ("chrome", "Default"))
+
+    def test_empty_auto_detected_cookie_file_is_ignored(self):
+        with TemporaryDirectory() as directory:
+            Path(directory, "cookies.txt").touch()
+            with patch.dict("os.environ", {}, clear=True), patch("pathlib.Path.cwd", return_value=Path(directory)):
+                options = downloader.get_yt_dlp_cookie_opts()
+
+        self.assertNotIn("cookiefile", options)
 
 
 class DownloadDirectViewTests(SimpleTestCase):
