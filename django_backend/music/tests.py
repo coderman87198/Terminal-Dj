@@ -16,6 +16,12 @@ class DownloaderConfigurationTests(SimpleTestCase):
 
         self.assertEqual(options["cookiesfrombrowser"], ("chrome", "Default"))
 
+    def test_cookie_file_path_strips_environment_whitespace(self):
+        with patch.dict("os.environ", {"YT_DLP_COOKIEFILE": " /etc/secrets/cookies.txt\n"}, clear=True):
+            options = downloader.get_yt_dlp_cookie_opts()
+
+        self.assertEqual(options["cookiefile"], "/etc/secrets/cookies.txt")
+
     def test_cookie_contents_are_written_to_private_file(self):
         with patch.dict("os.environ", {"YT_DLP_COOKIE_CONTENTS": "# Netscape HTTP Cookie File\n"}, clear=True):
             options = downloader.get_yt_dlp_cookie_opts()

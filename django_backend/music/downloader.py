@@ -73,6 +73,8 @@ def get_yt_dlp_cookie_opts():
     3. Auto-detect a common cookie filename in the repository workspace (e.g. www.youtube.com_cookies.txt)
     """
     cookiefile = os.getenv("YT_DLP_COOKIEFILE")
+    if cookiefile:
+        cookiefile = cookiefile.strip()
     cookie_contents = os.getenv("YT_DLP_COOKIE_CONTENTS")
     cookies_from_browser = os.getenv("YT_DLP_COOKIES_FROM_BROWSER")
     opts = {}
@@ -274,7 +276,7 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
 
     cookie_path = os.getenv("YT_DLP_COOKIEFILE")
     if cookie_path:
-        cookie_path = os.path.expanduser(cookie_path)
+        cookie_path = os.path.expanduser(cookie_path.strip())
     else:
         cookie_path = None
 
