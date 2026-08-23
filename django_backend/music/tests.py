@@ -23,6 +23,18 @@ class DownloaderConfigurationTests(SimpleTestCase):
         self.assertTrue(Path(options["cookiefile"]).is_file())
         self.assertEqual(Path(options["cookiefile"]).stat().st_mode & 0o777, 0o600)
 
+    @patch("music.downloader.yt_dlp.YoutubeDL")
+    def test_empty_explicit_cookie_file_returns_configuration_error(self, mock_youtube_dl):
+        with TemporaryDirectory() as directory:
+            cookie_path = Path(directory, "www.youtube.com_cookies.txt")
+            cookie_path.touch()
+            with patch.dict("os.environ", {"YT_DLP_COOKIEFILE": str(cookie_path)}, clear=True):
+                path, error = downloader.download_audio("https://example.com", directory)
+
+        self.assertIsNone(path)
+        self.assertIn("non-empty Netscape-format", error)
+        mock_youtube_dl.assert_not_called()
+
     def test_empty_auto_detected_cookie_file_is_ignored(self):
         with TemporaryDirectory() as directory:
             Path(directory, "cookies.txt").touch()

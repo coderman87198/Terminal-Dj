@@ -284,10 +284,10 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     if cookie_path is None and cookie_opts.get("cookiefile"):
         cookie_path = cookie_opts.get("cookiefile")
 
-    if cookie_path and not os.path.exists(cookie_path):
+    if cookie_path and (not os.path.isfile(cookie_path) or os.path.getsize(cookie_path) == 0):
         return None, (
             f"The configured YouTube cookie file was not found at {cookie_path}. "
-            "Set YT_DLP_COOKIEFILE to the correct path for your cookies file."
+            "Set YT_DLP_COOKIEFILE to a non-empty Netscape-format cookie file."
         )
 
     ffmpeg_available = shutil.which('ffmpeg') is not None
