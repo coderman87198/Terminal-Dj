@@ -86,8 +86,8 @@ def _format_download_error(error):
     if 'cookies' in lower or 'sign in' in lower or 'browser auth' in lower:
         return (
             'This video requires YouTube cookies or browser auth. '
-            'Set YT_DLP_COOKIEFILE to a Netscape-format cookies file or set YT_DLP_COOKIES_FROM_BROWSER to a browser name such as chrome/firefox. '
-            'If you are deploying on Render, add these values in the Render dashboard Environment section. '
+            'Set YT_DLP_COOKIE_CONTENTS as a Replit Secret, or set YT_DLP_COOKIEFILE to a Netscape-format cookies file. '
+            'For local browser access, set YT_DLP_COOKIES_FROM_BROWSER to a browser name such as chrome/firefox. '
             f'Backend details: {details}'
         )
     if 'yt-dlp' in lower or 'yt_dlp' in lower or 'extractor' in lower:
