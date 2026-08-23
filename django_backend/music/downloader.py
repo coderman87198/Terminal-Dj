@@ -8,6 +8,13 @@ import tempfile
 logger = logging.getLogger(__name__)
 
 
+def _copy_cookiefile_to_temp(cookiefile):
+    writable_cookiefile = os.path.join(tempfile.gettempdir(), "terminal_dj_youtube_cookies.txt")
+    shutil.copyfile(cookiefile, writable_cookiefile)
+    os.chmod(writable_cookiefile, 0o600)
+    return writable_cookiefile
+
+
 def safe_title(title):
     return re.sub(r'[\\/*?:"<>|]', "_", title)
 
@@ -79,7 +86,11 @@ def get_yt_dlp_cookie_opts():
     cookies_from_browser = os.getenv("YT_DLP_COOKIES_FROM_BROWSER")
     opts = {}
     if cookiefile:
-        opts["cookiefile"] = os.path.expanduser(cookiefile)
+        cookiefile = os.path.expanduser(cookiefile)
+        if os.path.isfile(cookiefile) and os.path.getsize(cookiefile) > 0:
+            opts["cookiefile"] = _copy_cookiefile_to_temp(cookiefile)
+        else:
+            opts["cookiefile"] = cookiefile
     elif cookie_contents and cookie_contents.strip():
         cookie_path = os.path.join(tempfile.gettempdir(), "terminal_dj_youtube_cookies.txt")
         with open(cookie_path, "w", encoding="utf-8") as handle:
@@ -304,7 +315,7 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         **get_yt_dlp_extractor_args(),
     }
     if cookie_path:
-        base_opts["cookiefile"] = cookie_path
+        base_opts["cookiefile"] = cookie_opts.get("cookiefile", cookie_path)
 
     if not isinstance(base_opts.get("extractor_args"), dict):
         base_opts["extractor_args"] = {"youtube": {"player_client": ["android", "web"]}}

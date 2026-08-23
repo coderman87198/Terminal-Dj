@@ -22,6 +22,19 @@ class DownloaderConfigurationTests(SimpleTestCase):
 
         self.assertEqual(options["cookiefile"], "/etc/secrets/cookies.txt")
 
+    def test_read_only_cookie_source_is_copied_to_writable_file(self):
+        with TemporaryDirectory() as directory:
+            source = Path(directory, "www.youtube.com_cookies.txt")
+            source.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+            source_contents = source.read_text(encoding="utf-8")
+            with patch.dict("os.environ", {"YT_DLP_COOKIEFILE": str(source)}, clear=True):
+                options = downloader.get_yt_dlp_cookie_opts()
+
+        cookie_copy = Path(options["cookiefile"])
+        self.assertNotEqual(cookie_copy, source)
+        self.assertEqual(cookie_copy.read_text(encoding="utf-8"), source_contents)
+        self.assertEqual(cookie_copy.stat().st_mode & 0o777, 0o600)
+
     def test_cookie_contents_are_written_to_private_file(self):
         with patch.dict("os.environ", {"YT_DLP_COOKIE_CONTENTS": "# Netscape HTTP Cookie File\n"}, clear=True):
             options = downloader.get_yt_dlp_cookie_opts()
