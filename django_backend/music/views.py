@@ -151,6 +151,10 @@ def download_track(request):
 
 @csrf_exempt
 def download_direct(request):
+    print("DEBUG: Download view reached")
+    print("DEBUG: Request path:", request.path)
+    print("DEBUG: Request method:", request.method)
+
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
