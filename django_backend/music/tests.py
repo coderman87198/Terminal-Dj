@@ -17,10 +17,16 @@ class DownloaderConfigurationTests(SimpleTestCase):
         self.assertEqual(options["cookiesfrombrowser"], ("chrome", "Default"))
 
     def test_cookie_file_path_strips_environment_whitespace(self):
-        with patch.dict("os.environ", {"YT_DLP_COOKIEFILE": " /etc/secrets/cookies.txt\n"}, clear=True):
-            options = downloader.get_yt_dlp_cookie_opts()
+        with TemporaryDirectory() as directory:
+            cookie_path = Path(directory, "cookies.txt")
+            cookie_path.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+            with patch.dict("os.environ", {"YT_DLP_COOKIEFILE": f" {cookie_path}\n"}, clear=True):
+                options = downloader.get_yt_dlp_cookie_opts()
 
-        self.assertEqual(options["cookiefile"], "/etc/secrets/cookies.txt")
+        copied_cookie = Path(options["cookiefile"])
+        self.assertTrue(copied_cookie.exists())
+        self.assertEqual(copied_cookie.read_text(encoding="utf-8"), "# Netscape HTTP Cookie File\n")
+        self.assertEqual(copied_cookie.stat().st_mode & 0o777, 0o600)
 
     def test_read_only_cookie_source_is_copied_to_writable_file(self):
         with TemporaryDirectory() as directory:
@@ -43,7 +49,19 @@ class DownloaderConfigurationTests(SimpleTestCase):
         self.assertEqual(Path(options["cookiefile"]).stat().st_mode & 0o777, 0o600)
 
     @patch("music.downloader.yt_dlp.YoutubeDL")
-    def test_empty_explicit_cookie_file_returns_configuration_error(self, mock_youtube_dl):
+    def test_empty_explicit_cookie_file_is_ignored_gracefully(self, mock_youtube_dl):
+        class FakeYDL:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return False
+
+            def extract_info(self, url, download=True):
+                return "unexpected-result"
+
+        mock_youtube_dl.return_value = FakeYDL()
+
         with TemporaryDirectory() as directory:
             cookie_path = Path(directory, "www.youtube.com_cookies.txt")
             cookie_path.touch()
@@ -51,8 +69,8 @@ class DownloaderConfigurationTests(SimpleTestCase):
                 path, error = downloader.download_audio("https://example.com", directory)
 
         self.assertIsNone(path)
-        self.assertIn("non-empty Netscape-format", error)
-        mock_youtube_dl.assert_not_called()
+        self.assertIn("unexpected result", error.lower())
+        mock_youtube_dl.assert_called()
 
     def test_empty_auto_detected_cookie_file_is_ignored(self):
         with TemporaryDirectory() as directory:

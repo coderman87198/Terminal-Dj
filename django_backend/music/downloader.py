@@ -8,6 +8,23 @@ import tempfile
 logger = logging.getLogger(__name__)
 
 
+def print_cookiefile_debug(cookiefile=None):
+    """Print the resolved cookie path and whether it exists for Render debugging."""
+    cookiefile = cookiefile or os.getenv("YT_DLP_COOKIEFILE") or ""
+    cookiefile = cookiefile.strip() if isinstance(cookiefile, str) else ""
+
+    if not cookiefile:
+        print("[Cookie] YT_DLP_COOKIEFILE is not set; yt-dlp will continue without a cookie file.")
+        return cookiefile
+
+    print(f"[Cookie] Resolved YT_DLP_COOKIEFILE: {cookiefile}")
+    if os.path.isfile(cookiefile):
+        print(f"[Cookie] Cookie file exists and will be used: {cookiefile}")
+    else:
+        print(f"[Cookie] Warning: cookie file does not exist at {cookiefile}")
+    return cookiefile
+
+
 def _copy_cookiefile_to_temp(cookiefile):
     writable_cookiefile = os.path.join(tempfile.gettempdir(), "terminal_dj_youtube_cookies.txt")
     shutil.copyfile(cookiefile, writable_cookiefile)
@@ -85,12 +102,18 @@ def get_yt_dlp_cookie_opts():
     cookie_contents = os.getenv("YT_DLP_COOKIE_CONTENTS")
     cookies_from_browser = os.getenv("YT_DLP_COOKIES_FROM_BROWSER")
     opts = {}
+    print_cookiefile_debug(cookiefile)
     if cookiefile:
         cookiefile = os.path.expanduser(cookiefile)
         if os.path.isfile(cookiefile) and os.path.getsize(cookiefile) > 0:
             opts["cookiefile"] = _copy_cookiefile_to_temp(cookiefile)
         else:
-            opts["cookiefile"] = cookiefile
+            logger.warning(
+                "YT_DLP_COOKIEFILE is set to %s but the file is missing or empty. "
+                "Skipping cookie auth for this run.",
+                cookiefile,
+            )
+            print(f"[Cookie] Warning: skipping invalid cookie file: {cookiefile}")
     elif cookie_contents and cookie_contents.strip():
         cookie_path = os.path.join(tempfile.gettempdir(), "terminal_dj_youtube_cookies.txt")
         with open(cookie_path, "w", encoding="utf-8") as handle:
@@ -291,17 +314,21 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     else:
         cookie_path = None
 
+    print_cookiefile_debug(cookie_path)
+
+    if cookie_path and (not os.path.isfile(cookie_path) or os.path.getsize(cookie_path) == 0):
+        logger.warning(
+            "YT_DLP_COOKIEFILE is set to %s but the file is missing or empty. "
+            "Skipping cookie auth for this run.",
+            cookie_path,
+        )
+        cookie_path = None
+
     cookie_opts = get_yt_dlp_cookie_opts()
 
     # If get_yt_dlp_cookie_opts discovered a cookiefile, prefer that when no explicit env var was set
     if cookie_path is None and cookie_opts.get("cookiefile"):
         cookie_path = cookie_opts.get("cookiefile")
-
-    if cookie_path and (not os.path.isfile(cookie_path) or os.path.getsize(cookie_path) == 0):
-        return None, (
-            f"The configured YouTube cookie file was not found at {cookie_path}. "
-            "Set YT_DLP_COOKIEFILE to a non-empty Netscape-format cookie file."
-        )
 
     ffmpeg_available = shutil.which('ffmpeg') is not None
     base_opts = {
@@ -314,7 +341,7 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         **cookie_opts,
         **get_yt_dlp_extractor_args(),
     }
-    if cookie_path:
+    if cookie_path and os.path.isfile(cookie_path) and os.path.getsize(cookie_path) > 0:
         base_opts["cookiefile"] = cookie_opts.get("cookiefile", cookie_path)
 
     if not isinstance(base_opts.get("extractor_args"), dict):
