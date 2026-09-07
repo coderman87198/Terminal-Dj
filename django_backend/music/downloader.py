@@ -308,6 +308,14 @@ def _find_downloaded_file(outdir, video_id, requested_ext=None):
 def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     os.makedirs(outdir, exist_ok=True)
 
+    cookiefile = os.getenv("YT_DLP_COOKIEFILE")
+    print("DEBUG: YT_DLP_COOKIEFILE =", cookiefile)
+
+    if cookiefile:
+        print("DEBUG: Cookiefile exists?", os.path.exists(cookiefile))
+    else:
+        print("DEBUG: No cookiefile env var set")
+
     cookie_path = os.getenv("YT_DLP_COOKIEFILE")
     if cookie_path:
         cookie_path = os.path.expanduser(cookie_path.strip())
@@ -364,6 +372,12 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
 
     last_error = None
     for attempt, ydl_opts in enumerate(candidate_opts, start=1):
+        if cookiefile and os.path.exists(cookiefile):
+            ydl_opts["cookiefile"] = cookiefile
+            print("DEBUG: Injecting cookiefile into yt-dlp:", cookiefile)
+        else:
+            print("DEBUG: Cookiefile NOT injected into yt-dlp")
+
         ydl_opts["http_headers"] = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
         }
