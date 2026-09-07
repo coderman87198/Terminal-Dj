@@ -1,3 +1,4 @@
+# force rebuild 2026-09-07
 FROM python:3.12-slim
 
 # Install ffmpeg for pydub audio processing and nodejs for yt-dlp JS runtime if needed
