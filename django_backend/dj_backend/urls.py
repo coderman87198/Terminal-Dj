@@ -17,6 +17,12 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
+
+def debug_url_resolver(request):
+    print("DEBUG: URL resolver reached:", request.path)
+    return None
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('music.urls')),
