@@ -308,21 +308,35 @@ def _find_downloaded_file(outdir, video_id, requested_ext=None):
 def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     os.makedirs(outdir, exist_ok=True)
 
-    cookiefile = os.getenv("YT_DLP_COOKIEFILE")
-    print("DEBUG: YT_DLP_COOKIEFILE =", cookiefile)
+    cookiefile = os.getenv("YT_DLP_COOKIEFILE", "").strip()
+    print("DEBUG: YT_DLP_COOKIEFILE =", cookiefile or None)
 
+    cookie_path = None
     if cookiefile:
-        print("DEBUG: Cookiefile exists?", os.path.exists(cookiefile))
+        filename = os.path.basename(cookiefile)
+        candidate_paths = [
+            os.path.join("/run/secrets", filename),
+            os.path.join("/etc/secrets", filename),
+            cookiefile,
+        ]
+        for candidate in candidate_paths:
+            print("DEBUG: Checking cookie path:", candidate)
+            if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+                cookie_path = candidate
+                print("DEBUG: Final cookie path used:", cookie_path)
+                break
+            print("DEBUG: Candidate missing or empty:", candidate)
+        if cookie_path is None:
+            print("DEBUG: No valid cookie file found in /run/secrets, /etc/secrets, or YT_DLP_COOKIEFILE")
     else:
         print("DEBUG: No cookiefile env var set")
 
-    cookie_path = os.getenv("YT_DLP_COOKIEFILE")
     if cookie_path:
-        cookie_path = os.path.expanduser(cookie_path.strip())
-    else:
-        cookie_path = None
+        print("DEBUG: Cookie file exists and will be used:", cookie_path)
 
-    print_cookiefile_debug(cookie_path)
+    cookie_opts = get_yt_dlp_cookie_opts()
+    if cookie_path:
+        cookie_opts["cookiefile"] = cookie_path
 
     if cookie_path and (not os.path.isfile(cookie_path) or os.path.getsize(cookie_path) == 0):
         logger.warning(
@@ -331,8 +345,6 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
             cookie_path,
         )
         cookie_path = None
-
-    cookie_opts = get_yt_dlp_cookie_opts()
 
     # If get_yt_dlp_cookie_opts discovered a cookiefile, prefer that when no explicit env var was set
     if cookie_path is None and cookie_opts.get("cookiefile"):
@@ -372,9 +384,9 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
 
     last_error = None
     for attempt, ydl_opts in enumerate(candidate_opts, start=1):
-        if cookiefile and os.path.exists(cookiefile):
-            ydl_opts["cookiefile"] = cookiefile
-            print("DEBUG: Injecting cookiefile into yt-dlp:", cookiefile)
+        if cookie_path and os.path.exists(cookie_path):
+            ydl_opts["cookiefile"] = cookie_path
+            print("DEBUG: Injecting cookiefile into yt-dlp:", cookie_path)
         else:
             print("DEBUG: Cookiefile NOT injected into yt-dlp")
 
