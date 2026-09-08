@@ -319,7 +319,7 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     ]
     if cookiefile:
         candidate_paths.append(cookiefile)
-    if cookiefile:
+        print("DEBUG: Searching cookie file in order: /run/secrets, /etc/secrets, then YT_DLP_COOKIEFILE")
         for candidate in candidate_paths:
             print("DEBUG: Checking cookie path:", candidate)
             if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
@@ -331,6 +331,7 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
             print("DEBUG: No valid cookie file found in /run/secrets, /etc/secrets, or YT_DLP_COOKIEFILE")
     else:
         print("DEBUG: No cookiefile env var set")
+        print("DEBUG: Searching default cookie file in order: /run/secrets, /etc/secrets")
         for candidate in candidate_paths:
             print("DEBUG: Checking cookie path:", candidate)
             if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
