@@ -312,13 +312,14 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     print("DEBUG: YT_DLP_COOKIEFILE =", cookiefile or None)
 
     cookie_path = None
+    filename = os.path.basename(cookiefile) if cookiefile else "www.youtube.com_cookies.txt"
+    candidate_paths = [
+        os.path.join("/run/secrets", filename),
+        os.path.join("/etc/secrets", filename),
+    ]
     if cookiefile:
-        filename = os.path.basename(cookiefile)
-        candidate_paths = [
-            os.path.join("/run/secrets", filename),
-            os.path.join("/etc/secrets", filename),
-            cookiefile,
-        ]
+        candidate_paths.append(cookiefile)
+    if cookiefile:
         for candidate in candidate_paths:
             print("DEBUG: Checking cookie path:", candidate)
             if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
@@ -330,6 +331,15 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
             print("DEBUG: No valid cookie file found in /run/secrets, /etc/secrets, or YT_DLP_COOKIEFILE")
     else:
         print("DEBUG: No cookiefile env var set")
+        for candidate in candidate_paths:
+            print("DEBUG: Checking cookie path:", candidate)
+            if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+                cookie_path = candidate
+                print("DEBUG: Final cookie path used:", cookie_path)
+                break
+            print("DEBUG: Candidate missing or empty:", candidate)
+        if cookie_path is None:
+            print("DEBUG: No valid cookie file found in /run/secrets or /etc/secrets for default filename www.youtube.com_cookies.txt")
 
     if cookie_path:
         print("DEBUG: Cookie file exists and will be used:", cookie_path)
