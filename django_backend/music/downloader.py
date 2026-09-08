@@ -171,12 +171,17 @@ def get_yt_dlp_cookie_opts():
     cookies_from_browser = os.getenv("YT_DLP_COOKIES_FROM_BROWSER")
     opts = {}
 
-    resolved_cookie = prepare_cookiefile_for_yt_dlp()
-    if resolved_cookie:
-        if cookiefile and os.path.exists(os.path.expanduser(cookiefile.strip())) and os.path.getsize(os.path.expanduser(cookiefile.strip())) > 0:
-            opts["cookiefile"] = _copy_cookiefile_to_temp(os.path.expanduser(cookiefile.strip()))
+    if cookiefile:
+        cookiefile = os.path.expanduser(cookiefile)
+        if os.path.isfile(cookiefile) and os.path.getsize(cookiefile) > 0:
+            opts["cookiefile"] = _copy_cookiefile_to_temp(cookiefile)
         else:
-            opts["cookiefile"] = resolved_cookie
+            logger.warning(
+                "YT_DLP_COOKIEFILE is set to %s but the file is missing or empty. "
+                "Skipping cookie auth for this run.",
+                cookiefile,
+            )
+            print(f"[Cookie] Warning: skipping invalid cookie file: {cookiefile}")
 
     if cookies_from_browser:
         browser_parts = cookies_from_browser.split(":", 3)
@@ -261,7 +266,6 @@ def search_youtube(query, max_results=20, preferred_runtime=None, remote_compone
         "no_warnings": True,
         "noplaylist": True,
         **get_yt_dlp_js_opts(preferred_runtime=preferred_runtime, remote_components=remote_components),
-        **get_yt_dlp_cookie_opts(),
         **get_yt_dlp_extractor_args(),
     }
     if not isinstance(ydl_opts.get("extractor_args"), dict):
@@ -408,7 +412,8 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     if cookie_path:
         print("DEBUG: Cookie file exists and will be used:", cookie_path)
 
-    cookie_opts = get_yt_dlp_cookie_opts()
+    cookie_opts = {}
+    # Direct downloads may use cookiefile prep in this helper; search never calls it.
     if cookie_path:
         cookie_opts["cookiefile"] = cookie_path
 
@@ -459,14 +464,13 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     last_error = None
     temp_cookiefile = None
     for attempt, ydl_opts in enumerate(candidate_opts, start=1):
-        temp_cookiefile = prepare_cookiefile_for_yt_dlp()
-        if temp_cookiefile:
-            if temp_cookiefile.startswith("/etc/secrets") or temp_cookiefile.startswith("/run/secrets"):
-                copied = copy_secret_to_writable(temp_cookiefile)
+        if cookie_path:
+            if cookie_path.startswith("/etc/secrets") or cookie_path.startswith("/run/secrets"):
+                copied = copy_secret_to_writable(cookie_path)
                 if copied:
-                    temp_cookiefile = copied
-            ydl_opts["cookiefile"] = temp_cookiefile
-            print("DEBUG: Injecting cookiefile into yt-dlp:", temp_cookiefile)
+                    cookie_path = copied
+            ydl_opts["cookiefile"] = cookie_path
+            print("DEBUG: Injecting cookiefile into yt-dlp:", cookie_path)
         else:
             print("DEBUG: Cookiefile NOT injected into yt-dlp")
 
