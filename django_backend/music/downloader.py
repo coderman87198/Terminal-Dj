@@ -32,6 +32,78 @@ def _copy_cookiefile_to_temp(cookiefile):
     return writable_cookiefile
 
 
+def copy_secret_to_writable(secret_path):
+    if not secret_path:
+        return None
+    p = os.path.expanduser(secret_path)
+    if not os.path.isfile(p) or os.path.getsize(p) == 0:
+        return None
+
+    fd, tmp_path = tempfile.mkstemp(prefix="yt_cookies_copy_", dir="/tmp")
+    os.close(fd)
+    try:
+        shutil.copyfile(p, tmp_path)
+        os.chmod(tmp_path, 0o600)
+        print(f"DEBUG: Copied secret to writable temp file: {tmp_path}")
+        return tmp_path
+    except Exception as exc:
+        print(f"DEBUG: Failed to copy secret to tmp: {exc}")
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+        return None
+
+
+def prepare_cookiefile_for_yt_dlp():
+    env_path = os.getenv("YT_DLP_COOKIEFILE", "").strip()
+    cookie_contents = os.getenv("YT_DLP_COOKIE_CONTENTS", "").strip()
+    cookie_filename = os.path.basename(env_path) if env_path else "www.youtube.com_cookies.txt"
+    candidates = [
+        os.path.join("/run/secrets", cookie_filename),
+        os.path.join("/etc/secrets", cookie_filename),
+    ]
+    if env_path:
+        candidates.append(os.path.expanduser(env_path))
+
+    for candidate in candidates:
+        try:
+            exists = os.path.exists(candidate)
+            size = os.path.getsize(candidate) if exists and os.path.isfile(candidate) else 0
+        except Exception:
+            exists = False
+            size = 0
+        print(f"DEBUG: Checking cookie candidate: {candidate} exists={exists} size={size}")
+        if exists and size > 0:
+            if candidate.startswith("/run/secrets") or candidate.startswith("/etc/secrets"):
+                writable = copy_secret_to_writable(candidate)
+                if writable:
+                    print(f"DEBUG: Using cookiefile: {writable}")
+                    return writable
+            print(f"DEBUG: Using cookiefile: {candidate}")
+            return candidate
+
+    if cookie_contents:
+        fd, tmp_path = tempfile.mkstemp(prefix="yt_cookies_", dir="/tmp")
+        os.close(fd)
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as handle:
+                handle.write(cookie_contents)
+            os.chmod(tmp_path, 0o600)
+            print(f"DEBUG: Wrote cookie contents to writable temp file: {tmp_path}")
+            print(f"DEBUG: Using cookiefile: {tmp_path}")
+            return tmp_path
+        except Exception as exc:
+            print(f"DEBUG: Failed to write cookie contents to {tmp_path}: {exc}")
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+    print("DEBUG: No usable cookiefile found")
+    return None
+
+
 def safe_title(title):
     return re.sub(r'[\\/*?:"<>|]', "_", title)
 
@@ -92,9 +164,12 @@ def get_yt_dlp_cookie_opts():
     """Return yt-dlp cookie options.
 
     Priority order:
-    1. YT_DLP_COOKIEFILE environment variable (path to Netscape-format cookies file)
-    2. YT_DLP_COOKIES_FROM_BROWSER environment variable (browser name)
-    3. Auto-detect a common cookie filename in the repository workspace (e.g. www.youtube.com_cookies.txt)
+    1. /run/secrets/<filename>
+    2. /etc/secrets/<filename>
+    3. YT_DLP_COOKIEFILE environment variable (path to Netscape-format cookies file)
+    4. YT_DLP_COOKIE_CONTENTS environment variable (cookies written to a secure writable temp file)
+    5. YT_DLP_COOKIES_FROM_BROWSER environment variable (browser name)
+    6. Auto-detect a common cookie filename in the repository workspace (e.g. www.youtube.com_cookies.txt)
     """
     cookiefile = os.getenv("YT_DLP_COOKIEFILE")
     if cookiefile:
@@ -102,38 +177,34 @@ def get_yt_dlp_cookie_opts():
     cookie_contents = os.getenv("YT_DLP_COOKIE_CONTENTS")
     cookies_from_browser = os.getenv("YT_DLP_COOKIES_FROM_BROWSER")
     opts = {}
-    print_cookiefile_debug(cookiefile)
-    if cookiefile:
-        cookiefile = os.path.expanduser(cookiefile)
-        if os.path.isfile(cookiefile) and os.path.getsize(cookiefile) > 0:
-            opts["cookiefile"] = _copy_cookiefile_to_temp(cookiefile)
+
+    resolved_cookie = prepare_cookiefile_for_yt_dlp()
+    if resolved_cookie:
+        if cookiefile and os.path.exists(os.path.expanduser(cookiefile.strip())) and os.path.getsize(os.path.expanduser(cookiefile.strip())) > 0:
+            opts["cookiefile"] = _copy_cookiefile_to_temp(os.path.expanduser(cookiefile.strip()))
         else:
-            logger.warning(
-                "YT_DLP_COOKIEFILE is set to %s but the file is missing or empty. "
-                "Skipping cookie auth for this run.",
-                cookiefile,
-            )
-            print(f"[Cookie] Warning: skipping invalid cookie file: {cookiefile}")
-    elif cookie_contents and cookie_contents.strip():
+            opts["cookiefile"] = resolved_cookie
+
+    if cookies_from_browser:
+        browser_parts = cookies_from_browser.split(":", 3)
+        opts["cookiesfrombrowser"] = tuple(browser_parts)
+
+    if not opts.get("cookiefile") and cookie_contents and cookie_contents.strip():
         cookie_path = os.path.join(tempfile.gettempdir(), "terminal_dj_youtube_cookies.txt")
         with open(cookie_path, "w", encoding="utf-8") as handle:
             handle.write(cookie_contents)
         os.chmod(cookie_path, 0o600)
         opts["cookiefile"] = cookie_path
-    if cookies_from_browser:
-        browser_parts = cookies_from_browser.split(":", 3)
-        opts["cookiesfrombrowser"] = tuple(browser_parts)
 
     # If neither env var is set, auto-detect a cookie file in likely locations.
-    if not cookiefile and not cookie_contents and not cookies_from_browser:
+    if not opts.get("cookiefile") and not cookie_contents and not cookies_from_browser:
         try:
             from pathlib import Path
             this_file = Path(__file__).resolve()
-            # potential search roots: repo workspace (two parents up), package dir (one parent), and cwd
             search_roots = [
-                this_file.parents[2],  # repo root when developing
-                this_file.parents[1],  # django_backend folder
-                Path.cwd(),            # container working directory
+                this_file.parents[2],
+                this_file.parents[1],
+                Path.cwd(),
             ]
             seen_roots = []
             candidates = [
@@ -155,7 +226,6 @@ def get_yt_dlp_cookie_opts():
                 if opts.get("cookiefile"):
                     break
         except Exception:
-            # Non-fatal; detection is best-effort
             pass
 
     return opts
