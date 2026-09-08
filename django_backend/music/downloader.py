@@ -33,21 +33,18 @@ def _copy_cookiefile_to_temp(cookiefile):
 
 
 def copy_secret_to_writable(secret_path):
-    if not secret_path:
+    p = Path(secret_path)
+    if not p.exists() or not p.is_file():
         return None
-    p = os.path.expanduser(secret_path)
-    if not os.path.isfile(p) or os.path.getsize(p) == 0:
-        return None
-
     fd, tmp_path = tempfile.mkstemp(prefix="yt_cookies_copy_", dir="/tmp")
     os.close(fd)
     try:
-        shutil.copyfile(p, tmp_path)
+        shutil.copyfile(str(p), tmp_path)
         os.chmod(tmp_path, 0o600)
         print(f"DEBUG: Copied secret to writable temp file: {tmp_path}")
         return tmp_path
-    except Exception as exc:
-        print(f"DEBUG: Failed to copy secret to tmp: {exc}")
+    except Exception as e:
+        print(f"DEBUG: Failed to copy secret to tmp: {e}")
         try:
             os.remove(tmp_path)
         except Exception:
@@ -56,45 +53,41 @@ def copy_secret_to_writable(secret_path):
 
 
 def prepare_cookiefile_for_yt_dlp():
-    env_path = os.getenv("YT_DLP_COOKIEFILE", "").strip()
-    cookie_contents = os.getenv("YT_DLP_COOKIE_CONTENTS", "").strip()
-    cookie_filename = os.path.basename(env_path) if env_path else "www.youtube.com_cookies.txt"
+    env_path = os.environ.get("YT_DLP_COOKIEFILE", "").strip()
+    cookie_contents = os.environ.get("YT_DLP_COOKIE_CONTENTS", "").strip()
+    cookie_filename = Path(env_path).name if env_path else "www.youtube.com_cookies.txt"
+
     candidates = [
-        os.path.join("/run/secrets", cookie_filename),
-        os.path.join("/etc/secrets", cookie_filename),
+        Path("/run/secrets") / cookie_filename,
+        Path("/etc/secrets") / cookie_filename,
     ]
     if env_path:
-        candidates.append(os.path.expanduser(env_path))
+        candidates.append(Path(env_path))
 
-    for candidate in candidates:
+    for p in candidates:
         try:
-            exists = os.path.exists(candidate)
-            size = os.path.getsize(candidate) if exists and os.path.isfile(candidate) else 0
+            exists = p.exists()
+            size = p.stat().st_size if exists and p.is_file() else 0
         except Exception:
             exists = False
             size = 0
-        print(f"DEBUG: Checking cookie candidate: {candidate} exists={exists} size={size}")
+
+        print(f"DEBUG: Checking cookie candidate: {p} exists={exists} size={size}")
         if exists and size > 0:
-            if candidate.startswith("/run/secrets") or candidate.startswith("/etc/secrets"):
-                writable = copy_secret_to_writable(candidate)
-                if writable:
-                    print(f"DEBUG: Using cookiefile: {writable}")
-                    return writable
-            print(f"DEBUG: Using cookiefile: {candidate}")
-            return candidate
+            print(f"DEBUG: Using cookiefile: {p}")
+            return str(p)
 
     if cookie_contents:
         fd, tmp_path = tempfile.mkstemp(prefix="yt_cookies_", dir="/tmp")
         os.close(fd)
         try:
-            with open(tmp_path, "w", encoding="utf-8") as handle:
-                handle.write(cookie_contents)
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(cookie_contents)
             os.chmod(tmp_path, 0o600)
             print(f"DEBUG: Wrote cookie contents to writable temp file: {tmp_path}")
-            print(f"DEBUG: Using cookiefile: {tmp_path}")
             return tmp_path
-        except Exception as exc:
-            print(f"DEBUG: Failed to write cookie contents to {tmp_path}: {exc}")
+        except Exception as e:
+            print(f"DEBUG: Failed to write cookie contents to {tmp_path}: {e}")
             try:
                 os.remove(tmp_path)
             except Exception:
@@ -464,10 +457,16 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     candidate_opts.append(fallback_opts)
 
     last_error = None
+    temp_cookiefile = None
     for attempt, ydl_opts in enumerate(candidate_opts, start=1):
-        if cookie_path and os.path.exists(cookie_path):
-            ydl_opts["cookiefile"] = cookie_path
-            print("DEBUG: Injecting cookiefile into yt-dlp:", cookie_path)
+        temp_cookiefile = prepare_cookiefile_for_yt_dlp()
+        if temp_cookiefile:
+            if temp_cookiefile.startswith("/etc/secrets") or temp_cookiefile.startswith("/run/secrets"):
+                copied = copy_secret_to_writable(temp_cookiefile)
+                if copied:
+                    temp_cookiefile = copied
+            ydl_opts["cookiefile"] = temp_cookiefile
+            print("DEBUG: Injecting cookiefile into yt-dlp:", temp_cookiefile)
         else:
             print("DEBUG: Cookiefile NOT injected into yt-dlp")
 
@@ -482,6 +481,14 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
             logger.exception("download_audio failed for %s (attempt %s)", url, attempt)
             last_error = str(exc) or repr(exc)
             continue
+        finally:
+            try:
+                if temp_cookiefile and temp_cookiefile.startswith("/tmp/yt_cookies"):
+                    os.remove(temp_cookiefile)
+                if temp_cookiefile and temp_cookiefile.startswith("/tmp/yt_cookies_copy_"):
+                    os.remove(temp_cookiefile)
+            except Exception:
+                pass
 
         if not isinstance(info, dict):
             logger.warning("yt_dlp returned unexpected info type for %s: %s", url, type(info).__name__)
