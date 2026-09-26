@@ -157,13 +157,7 @@ def get_yt_dlp_js_opts(preferred_runtime=None, remote_components=None):
 def get_yt_dlp_cookie_opts():
     """Return yt-dlp cookie options.
 
-    Priority order:
-    1. /run/secrets/<filename>
-    2. /etc/secrets/<filename>
-    3. YT_DLP_COOKIEFILE environment variable (path to Netscape-format cookies file)
-    4. YT_DLP_COOKIE_CONTENTS environment variable (cookies written to a secure writable temp file)
-    5. YT_DLP_COOKIES_FROM_BROWSER environment variable (browser name)
-    6. Auto-detect a common cookie filename in the repository workspace (e.g. www.youtube.com_cookies.txt)
+    Resolve Render secret mounts, explicit cookie paths, and cookie contents consistently.
     """
     cookiefile = os.getenv("YT_DLP_COOKIEFILE")
     if cookiefile:
@@ -172,21 +166,20 @@ def get_yt_dlp_cookie_opts():
     cookies_from_browser = os.getenv("YT_DLP_COOKIES_FROM_BROWSER")
     opts = {}
 
-    if cookiefile:
-        cookiefile = os.path.expanduser(cookiefile)
-        if os.path.isfile(cookiefile) and os.path.getsize(cookiefile) > 0:
-            opts["cookiefile"] = _copy_cookiefile_to_temp(cookiefile)
-        else:
-            logger.warning(
-                "YT_DLP_COOKIEFILE is set to %s but the file is missing or empty. "
-                "Skipping cookie auth for this run.",
-                cookiefile,
-            )
-            print(f"[Cookie] Warning: skipping invalid cookie file: {cookiefile}")
+    configured_path = os.path.expanduser(cookiefile) if cookiefile else ""
+    filename = os.path.basename(configured_path) if configured_path else "www.youtube.com_cookies.txt"
+    cookie_candidates = [Path("/run/secrets") / filename, Path("/etc/secrets") / filename]
+    if configured_path:
+        cookie_candidates.append(Path(configured_path))
 
-    if cookies_from_browser:
-        browser_parts = cookies_from_browser.split(":", 3)
-        opts["cookiesfrombrowser"] = tuple(browser_parts)
+    for candidate in cookie_candidates:
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            opts["cookiefile"] = _copy_cookiefile_to_temp(str(candidate))
+            print(f"[Cookie] Using cookie file from {candidate}")
+            break
+
+    if not opts.get("cookiefile") and configured_path:
+        logger.warning("YT_DLP_COOKIEFILE is set but no non-empty cookie file was found.")
 
     if not opts.get("cookiefile") and cookie_contents and cookie_contents.strip():
         cookie_path = os.path.join(tempfile.gettempdir(), "terminal_dj_youtube_cookies.txt")
@@ -195,10 +188,13 @@ def get_yt_dlp_cookie_opts():
         os.chmod(cookie_path, 0o600)
         opts["cookiefile"] = cookie_path
 
+    if cookies_from_browser and not opts.get("cookiefile"):
+        browser_parts = cookies_from_browser.split(":", 3)
+        opts["cookiesfrombrowser"] = tuple(browser_parts)
+
     # If neither env var is set, auto-detect a cookie file in likely locations.
     if not opts.get("cookiefile") and not cookie_contents and not cookies_from_browser:
         try:
-            from pathlib import Path
             this_file = Path(__file__).resolve()
             search_roots = [
                 this_file.parents[2],
@@ -266,6 +262,7 @@ def search_youtube(query, max_results=20, preferred_runtime=None, remote_compone
         "skip_download": True,
         "no_warnings": True,
         "noplaylist": True,
+        **get_yt_dlp_cookie_opts(),
         **get_yt_dlp_js_opts(preferred_runtime=preferred_runtime, remote_components=remote_components),
         **get_yt_dlp_extractor_args(),
     }
@@ -375,60 +372,7 @@ def _find_downloaded_file(outdir, video_id, requested_ext=None):
 
 def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     os.makedirs(outdir, exist_ok=True)
-
-    cookiefile = os.getenv("YT_DLP_COOKIEFILE", "").strip()
-    print("DEBUG: YT_DLP_COOKIEFILE =", cookiefile or None)
-
-    cookie_path = None
-    filename = os.path.basename(cookiefile) if cookiefile else "www.youtube.com_cookies.txt"
-    candidate_paths = [
-        os.path.join("/run/secrets", filename),
-        os.path.join("/etc/secrets", filename),
-    ]
-    if cookiefile:
-        candidate_paths.append(cookiefile)
-        print("DEBUG: Searching cookie file in order: /run/secrets, /etc/secrets, then YT_DLP_COOKIEFILE")
-        for candidate in candidate_paths:
-            print("DEBUG: Checking cookie path:", candidate)
-            if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
-                cookie_path = candidate
-                print("DEBUG: Final cookie path used:", cookie_path)
-                break
-            print("DEBUG: Candidate missing or empty:", candidate)
-        if cookie_path is None:
-            print("DEBUG: No valid cookie file found in /run/secrets, /etc/secrets, or YT_DLP_COOKIEFILE")
-    else:
-        print("DEBUG: No cookiefile env var set")
-        print("DEBUG: Searching default cookie file in order: /run/secrets, /etc/secrets")
-        for candidate in candidate_paths:
-            print("DEBUG: Checking cookie path:", candidate)
-            if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
-                cookie_path = candidate
-                print("DEBUG: Final cookie path used:", cookie_path)
-                break
-            print("DEBUG: Candidate missing or empty:", candidate)
-        if cookie_path is None:
-            print("DEBUG: No valid cookie file found in /run/secrets or /etc/secrets for default filename www.youtube.com_cookies.txt")
-
-    if cookie_path:
-        print("DEBUG: Cookie file exists and will be used:", cookie_path)
-
-    cookie_opts = {}
-    # Direct downloads may use cookiefile prep in this helper; search never calls it.
-    if cookie_path:
-        cookie_opts["cookiefile"] = cookie_path
-
-    if cookie_path and (not os.path.isfile(cookie_path) or os.path.getsize(cookie_path) == 0):
-        logger.warning(
-            "YT_DLP_COOKIEFILE is set to %s but the file is missing or empty. "
-            "Skipping cookie auth for this run.",
-            cookie_path,
-        )
-        cookie_path = None
-
-    # If get_yt_dlp_cookie_opts discovered a cookiefile, prefer that when no explicit env var was set
-    if cookie_path is None and cookie_opts.get("cookiefile"):
-        cookie_path = cookie_opts.get("cookiefile")
+    cookie_opts = get_yt_dlp_cookie_opts()
 
     ffmpeg_available = shutil.which('ffmpeg') is not None
     base_opts = {
@@ -441,9 +385,6 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         **cookie_opts,
         **get_yt_dlp_extractor_args(),
     }
-    if cookie_path and os.path.isfile(cookie_path) and os.path.getsize(cookie_path) > 0:
-        base_opts["cookiefile"] = cookie_opts.get("cookiefile", cookie_path)
-
     if not isinstance(base_opts.get("extractor_args"), dict):
         base_opts["extractor_args"] = {"youtube": {"player_client": ["android", "web"]}}
 
@@ -463,18 +404,7 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     candidate_opts.append(fallback_opts)
 
     last_error = None
-    temp_cookiefile = None
     for attempt, ydl_opts in enumerate(candidate_opts, start=1):
-        if cookie_path:
-            if cookie_path.startswith("/etc/secrets") or cookie_path.startswith("/run/secrets"):
-                copied = copy_secret_to_writable(cookie_path)
-                if copied:
-                    cookie_path = copied
-            ydl_opts["cookiefile"] = cookie_path
-            print("DEBUG: Injecting cookiefile into yt-dlp:", cookie_path)
-        else:
-            print("DEBUG: Cookiefile NOT injected into yt-dlp")
-
         ydl_opts["http_headers"] = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
         }
@@ -486,15 +416,6 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
             logger.exception("download_audio failed for %s (attempt %s)", url, attempt)
             last_error = str(exc) or repr(exc)
             continue
-        finally:
-            try:
-                if temp_cookiefile and temp_cookiefile.startswith("/tmp/yt_cookies"):
-                    os.remove(temp_cookiefile)
-                if temp_cookiefile and temp_cookiefile.startswith("/tmp/yt_cookies_copy_"):
-                    os.remove(temp_cookiefile)
-            except Exception:
-                pass
-
         if not isinstance(info, dict):
             logger.warning("yt_dlp returned unexpected info type for %s: %s", url, type(info).__name__)
             video_id = _extract_video_id(url)

@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from unittest.mock import patch
 
@@ -47,6 +48,40 @@ class DownloaderConfigurationTests(SimpleTestCase):
 
         self.assertTrue(Path(options["cookiefile"]).is_file())
         self.assertEqual(Path(options["cookiefile"]).stat().st_mode & 0o777, 0o600)
+
+    def test_render_secret_file_path_is_resolved_and_copied(self):
+        with patch.dict("os.environ", {"YT_DLP_COOKIEFILE": "/run/secrets/cookies.txt"}, clear=True), \
+             patch("music.downloader.Path.is_file", autospec=True, side_effect=lambda path: str(path) == "/run/secrets/cookies.txt"), \
+             patch("music.downloader.Path.stat", autospec=True, return_value=SimpleNamespace(st_size=10)), \
+             patch("music.downloader._copy_cookiefile_to_temp", return_value="/tmp/private-cookies") as copy_cookie:
+            options = downloader.get_yt_dlp_cookie_opts()
+
+        self.assertEqual(options["cookiefile"], "/tmp/private-cookies")
+        copy_cookie.assert_called_once_with("/run/secrets/cookies.txt")
+
+    @patch("music.downloader.yt_dlp.YoutubeDL")
+    def test_download_uses_cookie_contents_environment_variable(self, mock_youtube_dl):
+        class FakeYDL:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return False
+
+            def extract_info(self, url, download=True):
+                return "unexpected-result"
+
+        mock_youtube_dl.return_value = FakeYDL()
+
+        with TemporaryDirectory() as directory, patch.dict(
+            "os.environ", {"YT_DLP_COOKIE_CONTENTS": "# Netscape HTTP Cookie File\n"}, clear=True
+        ):
+            downloader.download_audio("https://example.com", directory)
+
+        options = mock_youtube_dl.call_args.args[0]
+        cookie_path = Path(options["cookiefile"])
+        self.assertEqual(cookie_path.read_text(encoding="utf-8"), "# Netscape HTTP Cookie File\n")
+        self.assertEqual(cookie_path.stat().st_mode & 0o777, 0o600)
 
     @patch("music.downloader.yt_dlp.YoutubeDL")
     def test_empty_explicit_cookie_file_is_ignored_gracefully(self, mock_youtube_dl):
