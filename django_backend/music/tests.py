@@ -50,14 +50,14 @@ class DownloaderConfigurationTests(SimpleTestCase):
         self.assertEqual(Path(options["cookiefile"]).stat().st_mode & 0o777, 0o600)
 
     def test_render_secret_file_path_is_resolved_and_copied(self):
-        with patch.dict("os.environ", {"YT_DLP_COOKIEFILE": "/run/secrets/cookies.txt"}, clear=True), \
-             patch("music.downloader.Path.is_file", autospec=True, side_effect=lambda path: str(path) == "/run/secrets/cookies.txt"), \
+        with patch.dict("os.environ", {"YT_DLP_COOKIEFILE": "/etc/secrets/cookies.txt"}, clear=True), \
+             patch("music.downloader.Path.is_file", autospec=True, side_effect=lambda path: str(path) == "/etc/secrets/cookies.txt"), \
              patch("music.downloader.Path.stat", autospec=True, return_value=SimpleNamespace(st_size=10)), \
              patch("music.downloader._copy_cookiefile_to_temp", return_value="/tmp/private-cookies") as copy_cookie:
             options = downloader.get_yt_dlp_cookie_opts()
 
         self.assertEqual(options["cookiefile"], "/tmp/private-cookies")
-        copy_cookie.assert_called_once_with("/run/secrets/cookies.txt")
+        copy_cookie.assert_called_once_with("/etc/secrets/cookies.txt")
 
     @patch("music.downloader.yt_dlp.YoutubeDL")
     def test_download_uses_cookie_contents_environment_variable(self, mock_youtube_dl):

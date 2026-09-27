@@ -168,14 +168,14 @@ def get_yt_dlp_cookie_opts():
 
     configured_path = os.path.expanduser(cookiefile) if cookiefile else ""
     filename = os.path.basename(configured_path) if configured_path else "www.youtube.com_cookies.txt"
-    cookie_candidates = [Path("/run/secrets") / filename, Path("/etc/secrets") / filename]
+    cookie_candidates = [Path("/etc/secrets") / filename, Path("/run/secrets") / filename]
     if configured_path:
-        cookie_candidates.append(Path(configured_path))
+        cookie_candidates.insert(0, Path(configured_path))
 
     for candidate in cookie_candidates:
         if candidate.is_file() and candidate.stat().st_size > 0:
             opts["cookiefile"] = _copy_cookiefile_to_temp(str(candidate))
-            print(f"[Cookie] Using cookie file from {candidate}")
+            logger.info("YouTube cookie authentication loaded from a mounted or configured cookie file.")
             break
 
     if not opts.get("cookiefile") and configured_path:
@@ -187,10 +187,12 @@ def get_yt_dlp_cookie_opts():
             handle.write(cookie_contents)
         os.chmod(cookie_path, 0o600)
         opts["cookiefile"] = cookie_path
+        logger.info("YouTube cookie authentication loaded from YT_DLP_COOKIE_CONTENTS.")
 
     if cookies_from_browser and not opts.get("cookiefile"):
         browser_parts = cookies_from_browser.split(":", 3)
         opts["cookiesfrombrowser"] = tuple(browser_parts)
+        logger.info("YouTube browser cookie authentication configured.")
 
     # If neither env var is set, auto-detect a cookie file in likely locations.
     if not opts.get("cookiefile") and not cookie_contents and not cookies_from_browser:
@@ -219,9 +221,13 @@ def get_yt_dlp_cookie_opts():
                         print(f"[Info] Auto-detected YouTube cookie file at: {p}")
                         break
                 if opts.get("cookiefile"):
+                    logger.info("YouTube cookie authentication auto-detected from a local cookie file.")
                     break
         except Exception:
             pass
+
+    if not opts.get("cookiefile") and not opts.get("cookiesfrombrowser"):
+        logger.warning("No YouTube cookie authentication source was found; request will be unauthenticated.")
 
     return opts
 

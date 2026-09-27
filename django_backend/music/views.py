@@ -86,9 +86,11 @@ def _format_download_error(error):
     if 'cookies' in lower or 'sign in' in lower or 'browser auth' in lower:
         return (
             'This video requires YouTube cookies or browser auth. '
-            'On Render, add a Secret File and set YT_DLP_COOKIEFILE to its /run/secrets/<filename> path, '
+            'On Render, add a Secret File and set YT_DLP_COOKIEFILE to its /etc/secrets/<filename> path, '
             'or set YT_DLP_COOKIE_CONTENTS to the full Netscape-format cookie export. '
             'For local browser access, set YT_DLP_COOKIES_FROM_BROWSER to a browser name such as chrome/firefox. '
+            'Check backend logs for whether a cookie source was loaded. If one was loaded, re-export fresh cookies '
+            'in Netscape format; YouTube may reject expired cookies or requests from Render. '
             f'Backend details: {details}'
         )
     if 'yt-dlp' in lower or 'yt_dlp' in lower or 'extractor' in lower:
