@@ -243,16 +243,6 @@
       renderSelectedTracks();
     }
 
-    function escapeHtml(value) {
-      return String(value).replace(/[&<>"']/g, character => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-      })[character]);
-    }
-
     async function downloadSelectedTracks() {
       if (!selectedTracks.length) {
         document.getElementById('downloadStatus').innerHTML = '<div class="status">Select at least one track first.</div>';
@@ -269,18 +259,8 @@
             body: JSON.stringify({ url: track.url, title: track.title })
           });
           if (!response.ok) {
-            const responseBody = await response.text();
-            let data = {};
-            try {
-              data = JSON.parse(responseBody);
-            } catch (error) {
-              data = {};
-            }
-            const bodyMessage = responseBody.trim()
-              ? new DOMParser().parseFromString(responseBody, 'text/html').body.textContent.trim()
-              : '';
-            const reason = data.error || data.message || bodyMessage.slice(0, 500) ||
-              `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
+            const data = await response.json().catch(() => ({}));
+            const reason = data.error || response.statusText || 'Unknown error';
             errors.push(`Error downloading ${track.title || track.url}: ${reason}`);
             continue;
           }
@@ -294,11 +274,11 @@
           anchor.remove();
           window.URL.revokeObjectURL(blobUrl);
         } catch (error) {
-          errors.push(`Error downloading ${track.title || track.url}: ${error.message || String(error) || 'Network request failed.'}`);
+          errors.push(`Error downloading ${track.title || track.url}: ${error.message}`);
         }
       }
-      const errorsHtml = errors.length ? errors.map((entry) => `<div style="margin-top:8px;">${escapeHtml(entry)}</div>`).join('') : '';
-      statusBox.innerHTML = `<div class="status">Downloads finished.<br>${errorsHtml ? errorsHtml : 'All selected tracks were downloaded.'}</div>`;
+      const errorsHtml = errors.length ? errors.map((entry) => `<div style="margin-top:8px;">${entry}</div>`).join('') : '';
+      statusBox.innerHTML = `<div class="status">Downloads started.<br>${errorsHtml ? errorsHtml : 'All selected tracks were queued for download.'}</div>`;
     }
 
     async function buildMix() {
