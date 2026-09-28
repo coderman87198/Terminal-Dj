@@ -175,7 +175,7 @@ def get_yt_dlp_cookie_opts():
     for candidate in cookie_candidates:
         if candidate.is_file() and candidate.stat().st_size > 0:
             opts["cookiefile"] = _copy_cookiefile_to_temp(str(candidate))
-            logger.info("YouTube cookie authentication loaded from a mounted or configured cookie file.")
+            print("[Cookie] YouTube cookie authentication loaded from a mounted or configured file.")
             break
 
     if not opts.get("cookiefile") and configured_path:
@@ -187,12 +187,12 @@ def get_yt_dlp_cookie_opts():
             handle.write(cookie_contents)
         os.chmod(cookie_path, 0o600)
         opts["cookiefile"] = cookie_path
-        logger.info("YouTube cookie authentication loaded from YT_DLP_COOKIE_CONTENTS.")
+        print("[Cookie] YouTube cookie authentication loaded from YT_DLP_COOKIE_CONTENTS.")
 
     if cookies_from_browser and not opts.get("cookiefile"):
         browser_parts = cookies_from_browser.split(":", 3)
         opts["cookiesfrombrowser"] = tuple(browser_parts)
-        logger.info("YouTube browser cookie authentication configured.")
+        print("[Cookie] YouTube browser cookie authentication configured.")
 
     # If neither env var is set, auto-detect a cookie file in likely locations.
     if not opts.get("cookiefile") and not cookie_contents and not cookies_from_browser:
@@ -221,7 +221,7 @@ def get_yt_dlp_cookie_opts():
                         print(f"[Info] Auto-detected YouTube cookie file at: {p}")
                         break
                 if opts.get("cookiefile"):
-                    logger.info("YouTube cookie authentication auto-detected from a local cookie file.")
+                    print("[Cookie] YouTube cookie authentication auto-detected from a local file.")
                     break
         except Exception:
             pass
@@ -421,6 +421,13 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
         except Exception as exc:
             logger.exception("download_audio failed for %s (attempt %s)", url, attempt)
             last_error = str(exc) or repr(exc)
+            if "sign in to confirm" in last_error.lower() and (
+                cookie_opts.get("cookiefile") or cookie_opts.get("cookiesfrombrowser")
+            ):
+                logger.warning(
+                    "YouTube challenged the request despite a configured cookie source; "
+                    "the session may be expired or YouTube may be blocking this server's IP."
+                )
             continue
         if not isinstance(info, dict):
             logger.warning("yt_dlp returned unexpected info type for %s: %s", url, type(info).__name__)
