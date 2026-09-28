@@ -409,6 +409,11 @@ def download_audio(url, outdir, preferred_runtime=None, remote_components=None):
     fallback_opts["extractor_args"] = {"youtube": {"player_client": ["android"]}}
     candidate_opts.append(fallback_opts)
 
+    broad_format_opts = dict(base_opts)
+    broad_format_opts["format"] = "best"
+    broad_format_opts["extractor_args"] = {"youtube": {"player_client": ["web_safari"]}}
+    candidate_opts.append(broad_format_opts)
+
     last_error = None
     for attempt, ydl_opts in enumerate(candidate_opts, start=1):
         ydl_opts["http_headers"] = {

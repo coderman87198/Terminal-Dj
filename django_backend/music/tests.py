@@ -84,6 +84,42 @@ class DownloaderConfigurationTests(SimpleTestCase):
         self.assertEqual(cookie_path.stat().st_mode & 0o777, 0o600)
 
     @patch("music.downloader.yt_dlp.YoutubeDL")
+    def test_download_retries_with_web_safari_when_formats_are_unavailable(self, mock_youtube_dl):
+        class FakeYDL:
+            def __init__(self, error=None):
+                self.error = error
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                return False
+
+            def extract_info(self, url, download=True):
+                if self.error:
+                    raise self.error
+                return "unexpected-result"
+
+        mock_youtube_dl.side_effect = [
+            FakeYDL(Exception("Requested format is not available")),
+            FakeYDL(Exception("Requested format is not available")),
+            FakeYDL(),
+        ]
+
+        with TemporaryDirectory() as directory, patch.dict("os.environ", {}, clear=True):
+            path, error = downloader.download_audio("https://example.com", directory)
+
+        self.assertIsNone(path)
+        self.assertIn("unexpected result", error.lower())
+        self.assertEqual(mock_youtube_dl.call_count, 3)
+        fallback_options = mock_youtube_dl.call_args_list[2].args[0]
+        self.assertEqual(fallback_options["format"], "best")
+        self.assertEqual(
+            fallback_options["extractor_args"],
+            {"youtube": {"player_client": ["web_safari"]}},
+        )
+
+    @patch("music.downloader.yt_dlp.YoutubeDL")
     def test_empty_explicit_cookie_file_is_ignored_gracefully(self, mock_youtube_dl):
         class FakeYDL:
             def __enter__(self):
